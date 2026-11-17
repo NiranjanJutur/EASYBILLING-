@@ -1,0 +1,65 @@
+# ─── Secrets — NEVER commit these ──────────────────────────────────────────
+.env
+.env.*
+!.env.example
+google-services.json
+GoogleService-Info.plist
+.firebase/
+
+# ─── Dependencies ────────────────────────────────────────────────────────────
+node_modules/
+.yarn/cache
+.pnp.*
+
+# ─── Build outputs ───────────────────────────────────────────────────────────
+dist/
+build/
+android/app/build/
+android/.cxx/
+android/app/.cxx/
+android/.gradle/
+android/**/build/
+android/**/*.log
+android/**/*log*.txt
+ios/build/
+*.apk
+*.aab
+*.ipa
+*.keystore
+
+# ─── Expo / React Native ─────────────────────────────────────────────────────
+.expo/
+.expo-shared/
+expo-env.d.ts
+
+# ─── Firebase ────────────────────────────────────────────────────────────────
+.firebase/
+firebase-debug.log
+
+# ─── Editor & OS ─────────────────────────────────────────────────────────────
+.vscode/settings.json
+.DS_Store
+Thumbs.db
+*.swp
+
+# ─── Logs & temp ─────────────────────────────────────────────────────────────
+*.log
+*.log.*
+*.bak
+*.tmp
+*.coverage
+coverage/
+.nyc_output/
+
+# Local IDE data, duplicate working directories and diagnostics
+.idea/
+.vscode/
+.claude/
+crash_*.txt
+recent_logcat.txt
+logcat.txt
+tsc_*.txt
+android_build_log.txt
+android/build_error*.txt
+build_log.txt
+check_output*.txt
