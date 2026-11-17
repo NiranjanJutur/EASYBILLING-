@@ -1,45 +1,28 @@
-# Contributing to SMS
+# Contributing to ShopLedger
 
-Thanks for your interest! This is a student open-source project and all contributions are welcome.
+Thanks for improving ShopLedger. Bug reports, documentation improvements, accessibility work, and new business workflows are all welcome.
 
 ## Quick start
 
-1. Fork the repo on GitHub
-2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/SMS.git`
-3. Create a branch: `git checkout -b feat/your-feature`
-4. Make your changes
-5. Run `npm run lint` to check for issues
-6. Open a Pull Request against `main`
-
-## Branch naming
-
-| Type | Example |
-|---|---|
-| Feature | `feat/add-barcode-scanner` |
-| Bug fix | `fix/stock-update-crash` |
-| DB change | `db/add-suppliers-table` |
-| Docs | `docs/update-readme` |
+1. Fork the repository on GitHub.
+2. Clone your fork and run `npm install`.
+3. Copy `.env.example` to `.env`; local mode needs no key or cloud account.
+4. Create a branch such as `feat/add-barcode-scanner` or `fix/stock-update`.
+5. Make one focused change and run the relevant checks.
+6. Open a pull request against `main` with screenshots for user-interface changes when possible.
 
 ## Code guidelines
 
-- TypeScript everywhere — avoid `any` types
-- All DB operations must go through `src/services/database/supabaseDataService.ts`
-- Use atomic RPC functions for balance/stock updates — never read-then-write
-- One screen per file in `src/screens/<feature>/`
-- Never commit `.env`, `node_modules/`, or API keys
+- Use TypeScript and keep screen changes focused.
+- Preserve local-first behaviour: the app must work without a network connection.
+- Keep secrets in `.env`; never commit API keys, tokens, keystores, production data, or an APK.
+- Use generic demo data in documentation, fixtures, and screenshots.
+- Add a migration under `supabase/migrations/` only when changing the optional cloud schema.
 
-## Database changes
+## Reporting a bug
 
-Add a new numbered SQL file in `supabase/migrations/` (e.g. `004_add_discount_table.sql`) and describe what it does at the top of the file.
+Include the expected result, actual result, steps to reproduce, app version, and Android/web environment. Do not attach invoices or screenshots containing customer or business data.
 
-## Reporting bugs
+## Good contribution areas
 
-Open a GitHub Issue with:
-- What you expected to happen
-- What actually happened
-- Steps to reproduce
-- Device / OS / version
-
-## Good first issues
-
-Look for issues labelled `good first issue` — these are small, well-defined tasks ideal for first-time contributors.
+See [ROADMAP.md](ROADMAP.md). Small fixes to billing calculations, receipt layouts, accessibility, translations, Android device compatibility, and documentation are especially useful.
