@@ -1,4 +1,4 @@
-package com.shoplegder
+package com.shopledger
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule

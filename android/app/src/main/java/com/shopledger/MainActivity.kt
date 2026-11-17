@@ -1,4 +1,4 @@
-package com.shoplegder
+package com.shopledger
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

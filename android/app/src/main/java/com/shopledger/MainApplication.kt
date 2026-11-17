@@ -1,4 +1,4 @@
-package com.shoplegder
+package com.shopledger
 
 import android.app.Application
 import com.facebook.react.PackageList

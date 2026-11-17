@@ -1,4 +1,4 @@
-package com.shoplegder;
+package com.shopledger;
 
 import android.Manifest;
 import android.content.Intent;
