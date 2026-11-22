@@ -14,24 +14,29 @@ import { ROLE_LABELS } from '../../models/Staff';
 interface LoginScreenProps {
     onLogin: (staff: StaffSession) => void;
     onLangChange?: (l: Language) => void;
+    onRegisterPress?: () => void;
 }
 
 const LANGUAGES: { key: Language; label: string }[] = [
     { key: 'en', label: 'EN' },
     { key: 'kn', label: 'ಕನ್ನಡ' },
     { key: 'hi', label: 'हिन्दी' },
+    { key: 'te', label: 'తెలుగు' },
+    { key: 'mr', label: 'मराठी' },
 ];
 
 const TEXT: Record<string, { store: string; pin: string; login: string; hint: string }> = {
-    en: { store: 'Select store', pin: 'Enter your PIN', login: 'Log in', hint: 'Your PIN decides your role (Owner, Cashier, Stock Manager or Accountant).' },
-    kn: { store: 'ಅಂಗಡಿ ಆಯ್ಕೆ ಮಾಡಿ', pin: 'ನಿಮ್ಮ ಪಿನ್ ನಮೂದಿಸಿ', login: 'ಲಾಗಿನ್', hint: 'ನಿಮ್ಮ ಪಿನ್ ನಿಮ್ಮ ಪಾತ್ರವನ್ನು ನಿರ್ಧರಿಸುತ್ತದೆ.' },
-    hi: { store: 'दुकान चुनें', pin: 'अपना पिन डालें', login: 'लॉग इन', hint: 'आपका पिन आपकी भूमिका तय करता है।' },
+    en: { store: 'Select store', pin: 'Enter 4-digit PIN', login: 'Log in', hint: 'Your PIN decides your role (Owner, Cashier, Stock Manager or Accountant).' },
+    kn: { store: 'ಅಂಗಡಿ ಆಯ್ಕೆ ಮಾಡಿ', pin: '4-ಅಂಕಿ ಪಿನ್ ನಮೂದಿಸಿ', login: 'ಲಾಗಿನ್', hint: 'ನಿಮ್ಮ ಪಿನ್ ನಿಮ್ಮ ಪಾತ್ರವನ್ನು ನಿರ್ಧರಿಸುತ್ತದೆ.' },
+    hi: { store: 'दुकान चुनें', pin: '4-अंकों का पिन डालें', login: 'लॉग इन', hint: 'आपका पिन आपकी भूमिका तय करता है।' },
+    te: { store: 'షాపు ఎంచుకోండి', pin: '4-అంకెల పిన్ నమోదు చేయండి', login: 'లాగిన్', hint: 'మీ పిన్ మీ పాత్రను నిర్ణయిస్తుంది.' },
+    mr: { store: 'दुकान निवडा', pin: '4-अंकी पिन टाका', login: 'लॉग इन', hint: 'तुमचा पिन तुमची भूमिका ठरवतो.' },
 };
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'back'];
 const DEV_ROLES: StaffRole[] = ['OWNER', 'CASHIER', 'STOCK_MANAGER', 'ACCOUNTANT'];
 
-const LoginScreen = ({ onLogin, onLangChange }: LoginScreenProps) => {
+const LoginScreen = ({ onLogin, onLangChange, onRegisterPress }: LoginScreenProps) => {
     const [lang, setLang] = useState<Language>('en');
     const [pin, setPin] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -47,24 +52,17 @@ const LoginScreen = ({ onLogin, onLangChange }: LoginScreenProps) => {
         onLangChange?.(l);
     };
 
-    const pressKey = (key: string) => {
-        setError('');
-        if (key === 'clear') setPin('');
-        else if (key === 'back') setPin(p => p.slice(0, -1));
-        else setPin(p => (p.length < 6 ? p + key : p));
-    };
-
-    const handleLogin = async () => {
+    const attemptLoginWithPin = async (candidatePin: string) => {
         if (isLoading) return;
-        if (!/^\d{4,6}$/.test(pin)) {
-            setError('PIN must be 4 to 6 digits');
+        if (!/^\d{4}$/.test(candidatePin)) {
+            setError('PIN must be 4 digits');
             return;
         }
         setIsLoading(true);
         setError('');
         try {
             setActiveStoreId(activeStore.id);
-            const res = await staffLogin(activeStore.id, pin);
+            const res = await staffLogin(activeStore.id, candidatePin);
             if (!res.ok || !res.id || !res.role) {
                 const left = res.attemptsLeft !== undefined && !res.locked ? ` (${res.attemptsLeft} tries left)` : '';
                 setError((res.error || 'Wrong PIN') + left);
@@ -84,6 +82,24 @@ const LoginScreen = ({ onLogin, onLangChange }: LoginScreenProps) => {
             setIsLoading(false);
         }
     };
+
+    const pressKey = (key: string) => {
+        setError('');
+        if (key === 'clear') setPin('');
+        else if (key === 'back') setPin(p => p.slice(0, -1));
+        else {
+            setPin(p => {
+                if (p.length >= 4) return p;
+                const next = p + key;
+                if (next.length === 4) {
+                    setTimeout(() => attemptLoginWithPin(next), 50);
+                }
+                return next;
+            });
+        }
+    };
+
+    const handleLogin = () => attemptLoginWithPin(pin);
 
     const devLogin = (role: StaffRole) => {
         setActiveStoreId(activeStore.id);
@@ -143,13 +159,12 @@ const LoginScreen = ({ onLogin, onLangChange }: LoginScreenProps) => {
                     <View style={styles.pinCard}>
                         <Text style={styles.pinTitle}>{L.pin}</Text>
                         <TouchableOpacity activeOpacity={1} onPress={() => inputRef.current?.focus()} style={styles.dotsRow}>
-                            {[0, 1, 2, 3, 4, 5].map(i => (
+                            {[0, 1, 2, 3].map(i => (
                                 <View
                                     key={i}
                                     style={[
                                         styles.dot,
                                         i < pin.length && { backgroundColor: activeStore.color, borderColor: activeStore.color },
-                                        i >= 4 && i >= pin.length && styles.dotOptional,
                                     ]}
                                 />
                             ))}
@@ -158,11 +173,18 @@ const LoginScreen = ({ onLogin, onLangChange }: LoginScreenProps) => {
                         <TextInput
                             ref={inputRef}
                             value={pin}
-                            onChangeText={v => { setError(''); setPin(v.replace(/\D/g, '').slice(0, 6)); }}
+                            onChangeText={v => {
+                                setError('');
+                                const cleaned = v.replace(/\D/g, '').slice(0, 4);
+                                setPin(cleaned);
+                                if (cleaned.length === 4) {
+                                    setTimeout(() => attemptLoginWithPin(cleaned), 50);
+                                }
+                            }}
                             onSubmitEditing={handleLogin}
                             keyboardType="number-pad"
                             secureTextEntry
-                            maxLength={6}
+                            maxLength={4}
                             autoFocus={Platform.OS === 'web'}
                             style={styles.hiddenInput}
                             accessibilityLabel="PIN"
@@ -196,6 +218,11 @@ const LoginScreen = ({ onLogin, onLangChange }: LoginScreenProps) => {
                             {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.loginBtnText}>{L.login}</Text>}
                         </TouchableOpacity>
                         <Text style={styles.hint}>{L.hint}</Text>
+                        {onRegisterPress && (
+                            <TouchableOpacity style={styles.reRegisterBtn} onPress={onRegisterPress}>
+                                <Text style={styles.reRegisterText}>⚙️ Edit Shop Registration Details</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
 
                     {ENV.IS_DEV && (
@@ -258,6 +285,8 @@ const styles = StyleSheet.create({
     loginBtn: { marginTop: SPACING.LG, paddingVertical: 14, borderRadius: RADIUS.LG, alignItems: 'center' },
     loginBtnText: { color: '#fff', fontSize: FONT_SIZE.LG, fontWeight: FONT_WEIGHT.EXTRABOLD },
     hint: { marginTop: SPACING.SM, fontSize: FONT_SIZE.XS, color: COLORS.TEXT_DIM, textAlign: 'center', lineHeight: 16 },
+    reRegisterBtn: { marginTop: SPACING.MD, paddingVertical: SPACING.SM, alignItems: 'center' },
+    reRegisterText: { fontSize: FONT_SIZE.XS, color: COLORS.PRIMARY, fontWeight: FONT_WEIGHT.BOLD },
 
     devBox: { marginTop: SPACING.LG, padding: SPACING.MD, borderRadius: RADIUS.LG, borderWidth: 1, borderStyle: 'dashed', borderColor: COLORS.WARNING },
     devTitle: { fontSize: FONT_SIZE.XS, fontWeight: FONT_WEIGHT.BOLD, color: COLORS.TEXT_DIM, textAlign: 'center', marginBottom: SPACING.SM },
