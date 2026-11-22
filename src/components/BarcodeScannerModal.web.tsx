@@ -10,6 +10,24 @@ interface BarcodeScannerModalProps {
   continuous?: boolean;
 }
 
+const STORAGE_CAMERA_KEY = 'shopledger_preferred_camera_id';
+
+function getStoredCameraId(): string | null {
+  try {
+    return sessionStorage.getItem(STORAGE_CAMERA_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setStoredCameraId(id: string) {
+  try {
+    sessionStorage.setItem(STORAGE_CAMERA_KEY, id);
+  } catch {
+    // ignore
+  }
+}
+
 /** Play real scan sound from flutter_billing_app with audio oscillator fallback */
 function playScanSound() {
   try {
@@ -71,7 +89,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
   const lastScannedCode = useRef<string>('');
   const lastScannedTime = useRef<number>(0);
-  const activeDeviceIdRef = useRef<string | null>(null);
+  const activeDeviceIdRef = useRef<string | null>(getStoredCameraId());
 
   const [cameraActive, setCameraActive] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -91,7 +109,9 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const stopScanner = useCallback(() => {
     if (zxingReaderRef.current) {
       try {
-        zxingReaderRef.current.reset();
+        if (typeof zxingReaderRef.current.reset === 'function') {
+          zxingReaderRef.current.reset();
+        }
       } catch {
         // ignore
       }
@@ -128,7 +148,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       setFeedback(prev => (prev === `✅ ${clean}` ? null : prev));
     }, 1800);
 
-    // Call parent handler without causing camera to restart
+    // Call parent handler without causing camera to restart or re-init
     onScannedRef.current(clean);
 
     if (!continuousRef.current) {
@@ -199,7 +219,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   }, []);
 
   // Start Scanner with self-hosted ZXing engine & continuous auto-focus
-  // IMPORTANT: ALWAYS default to environment (rear) camera unless user explicitly selected a device
+  // PERSISTENT: remembers camera choice and ALWAYS defaults to rear/environment camera
   const startScanner = useCallback(async (explicitDeviceId?: string) => {
     stopScanner();
     setLoading(true);
@@ -213,25 +233,58 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         return;
       }
 
-      // If user explicitly switched to a deviceId, use it;
-      // otherwise, ALWAYS default to facingMode: 'environment' (back/rear camera)
+      // Step 1: Enumerate devices to identify rear camera explicitly
+      let targetDeviceId = explicitDeviceId || getStoredCameraId();
+
+      if (!targetDeviceId && navigator.mediaDevices.enumerateDevices) {
+        try {
+          const devs = await navigator.mediaDevices.enumerateDevices();
+          const cams = devs.filter(d => d.kind === 'videoinput');
+          const rearCam = cams.find(c => /back|rear|environment/i.test(c.label))
+            || cams.find(c => c.label && !/front|user|selfie/i.test(c.label));
+          if (rearCam?.deviceId) {
+            targetDeviceId = rearCam.deviceId;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       let videoConstraints: MediaTrackConstraints;
-      if (explicitDeviceId) {
-        videoConstraints = { deviceId: { exact: explicitDeviceId } };
-        activeDeviceIdRef.current = explicitDeviceId;
+      if (targetDeviceId) {
+        videoConstraints = { deviceId: { exact: targetDeviceId } };
       } else {
         videoConstraints = { facingMode: { ideal: 'environment' } };
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          ...videoConstraints,
-          width: { ideal: 1920, min: 1280 },
-          height: { ideal: 1080, min: 720 },
-        },
-        audio: false,
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            ...videoConstraints,
+            width: { ideal: 1920, min: 1280 },
+            height: { ideal: 1080, min: 720 },
+          },
+          audio: false,
+        });
+      } catch (e: any) {
+        // Fallback without exact constraint if device was busy or not found
+        console.warn('Primary camera constraint failed, falling back:', e);
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1920, min: 1280 }, height: { ideal: 1080, min: 720 } },
+          audio: false,
+        });
+      }
       streamRef.current = stream;
+
+      // Step 2: Store the ACTUAL active device ID so subsequent operations lock to it
+      const activeTrack = stream.getVideoTracks()[0];
+      const settings = activeTrack?.getSettings?.() || {};
+      const actualId = settings.deviceId || targetDeviceId;
+      if (actualId) {
+        setStoredCameraId(actualId);
+        activeDeviceIdRef.current = actualId;
+      }
 
       // Populate camera list with real labels now that camera permission is granted
       try {
@@ -239,25 +292,16 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         const cameras = devices.filter(d => d.kind === 'videoinput');
         setVideoDevices(cameras);
 
-        // Find which camera is currently in use
-        const activeTrack = stream.getVideoTracks()[0];
-        const settings = activeTrack?.getSettings ? activeTrack.getSettings() : ({} as any);
-        const currentId = settings.deviceId || explicitDeviceId;
-        if (currentId) {
-          activeDeviceIdRef.current = currentId;
-          const idx = cameras.findIndex(c => c.deviceId === currentId);
+        if (actualId) {
+          const idx = cameras.findIndex(c => c.deviceId === actualId);
           if (idx >= 0) setSelectedDeviceIndex(idx);
-        } else {
-          const rearIdx = cameras.findIndex(c => /back|rear|environment/i.test(c.label));
-          if (rearIdx >= 0) setSelectedDeviceIndex(rearIdx);
         }
       } catch {
         // ignore enumeration errors
       }
 
-      const track = stream.getVideoTracks()[0];
-      if (track) {
-        const caps = (track.getCapabilities ? track.getCapabilities() : {}) as any;
+      if (activeTrack) {
+        const caps = (activeTrack.getCapabilities ? activeTrack.getCapabilities() : {}) as any;
         if ('torch' in caps) setHasTorch(true);
 
         // Auto-configure optimal focus and default 1.5x zoom
@@ -275,7 +319,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         }
 
         if (Object.keys(adv).length > 0) {
-          track.applyConstraints({ advanced: [adv] }).catch(() => undefined);
+          activeTrack.applyConstraints({ advanced: [adv] }).catch(() => undefined);
         }
       }
 
@@ -285,7 +329,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         setCameraActive(true);
         setLoading(false);
 
-        // Initialize ZXing MultiFormat Reader directly on video element
+        // Initialize ZXing MultiFormat Reader directly on video element using CONTINUOUS decoding
         const ZXing = (window as any).ZXing;
         if (ZXing && ZXing.BrowserMultiFormatReader) {
           const hints = new Map();
@@ -304,7 +348,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           const codeReader = new ZXing.BrowserMultiFormatReader(hints, 180);
           zxingReaderRef.current = codeReader;
 
-          codeReader.decodeFromVideoElement(videoRef.current, (result: any) => {
+          // Use continuous decoding so it never stops after 1 item
+          codeReader.decodeFromVideoElementContinuously(videoRef.current, (result: any) => {
             if (result && result.getText()) {
               handleDetected(result.getText());
             }
@@ -349,13 +394,15 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   };
 
-  // Switch Camera to next available device
+  // Switch Camera to next available device & persist preference
   const switchCamera = () => {
     if (videoDevices.length <= 1) return;
     const nextIdx = (selectedDeviceIndex + 1) % videoDevices.length;
     setSelectedDeviceIndex(nextIdx);
     const target = videoDevices[nextIdx];
     if (target?.deviceId) {
+      setStoredCameraId(target.deviceId);
+      activeDeviceIdRef.current = target.deviceId;
       startScanner(target.deviceId);
     }
   };

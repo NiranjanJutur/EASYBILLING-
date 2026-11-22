@@ -463,7 +463,7 @@ export const BillingScreen: React.FC<{ route?: { params?: RouteParams }; navigat
   );
 
   // ── Products panel ─────────────────────────────────────────────────────────
-  const ProductsPanel = () => (
+  const renderProductsPanel = () => (
     <View style={[styles.productsPanel, isWide && styles.productsPanelWide]}>
       {/* Search & Barcode Scan */}
       <View style={styles.searchBar}>
@@ -516,7 +516,7 @@ export const BillingScreen: React.FC<{ route?: { params?: RouteParams }; navigat
   );
 
   // ── Cart panel ─────────────────────────────────────────────────────────────
-  const CartPanel = () => (
+  const renderCartPanel = () => (
     <View style={[styles.cartPanel, isWide && styles.cartPanelWide]}>
       <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }}>
         {/* Cart header with item count and total */}
@@ -754,13 +754,13 @@ export const BillingScreen: React.FC<{ route?: { params?: RouteParams }; navigat
       {/* Body: side-by-side on wide, stacked on narrow */}
       {isWide ? (
         <View style={styles.wideBody}>
-          <ProductsPanel />
-          <CartPanel />
+          {renderProductsPanel()}
+          {renderCartPanel()}
         </View>
       ) : (
         <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
-          <ProductsPanel />
-          <CartPanel />
+          {renderProductsPanel()}
+          {renderCartPanel()}
         </ScrollView>
       )}
 
@@ -1062,6 +1062,7 @@ export const BillingScreen: React.FC<{ route?: { params?: RouteParams }; navigat
 
       {/* ── Continuous Barcode Scanner Modal ─────────────────────────────── */}
       <BarcodeScannerModal
+        key="pos-barcode-scanner"
         visible={showBarcodeScanner}
         continuous={true}
         onClose={handleCloseScanner}
