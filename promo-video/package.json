@@ -1,0 +1,17 @@
+{
+  "name": "easybilling-promo-video",
+  "version": "1.0.0",
+  "description": "High-impact promotional video for EasyBilling (ShopLedger) using Remotion",
+  "scripts": {
+    "start": "remotion preview src/index.ts",
+    "build": "remotion render src/index.ts EasyBillingPromo out/easybilling-promo.mp4",
+    "render-github": "remotion render src/index.ts EasyBillingPromo out/easybilling-promo.mp4 --codec=h264",
+    "render-gif": "remotion render src/index.ts EasyBillingPromo out/easybilling-promo.gif"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.260",
+    "@remotion/cli": "^4.0.260"
+  }
+}
