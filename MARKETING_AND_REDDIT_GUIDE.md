@@ -7,8 +7,22 @@ This guide contains ready-to-copy marketing templates, Reddit posts, and GitHub 
 ## 📽️ Video Asset Details
 
 - **File Path:** `promo-video/out/easybilling-promo.mp4`
-- **Specs:** 1920 × 1080 (Full HD), 30 FPS, ~34 seconds, H.264 MP4
+- **Audio:** Upbeat background commercial track mixed with smooth fade-in/out
+- **Specs:** 1920 × 1080 (Full HD), 30 FPS, ~34 seconds, H.264 MP4 (4.9 MB)
 - **Format:** Accepted natively by Reddit, Twitter/X, LinkedIn, and GitHub Releases / README assets.
+
+---
+
+## 📸 Captured App Screenshots (Ready for Reddit & GitHub)
+
+The following high-resolution screenshots were captured from the live application and saved in `screenshots/`:
+
+| # | View | Description | File |
+|---|------|-------------|------|
+| 1 | **Welcome & Language** | 5-language selector (English, ಕನ್ನಡ, हिन्दी, తెలుగు, मराठी) & value props | `screenshots/01_welcome_registration.png` |
+| 2 | **4-Digit PIN Login** | Forest-green store login with custom on-screen 4-digit PIN pad | `screenshots/02_login_4digit_pin.png` |
+| 3 | **Cashier POS Billing** | Product catalog grid, stock warnings, active cart, and tax totals | `screenshots/03_pos_billing_screen.png` |
+| 4 | **Udhaar / Credit Khata** | Customer ledger with debt badges, credit limits, and WhatsApp reminders | `screenshots/04_udhaar_customers_ledger.png` |
 
 ---
 

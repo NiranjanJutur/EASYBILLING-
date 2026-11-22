@@ -44,6 +44,7 @@ firebase-debug.log
 *.mkv
 *.gif
 out/
+screenshots/
 promo-video/out/
 promo-video/.remotion/
 promo-video/node_modules/

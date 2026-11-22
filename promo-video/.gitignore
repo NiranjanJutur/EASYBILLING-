@@ -1,10 +1,12 @@
 node_modules/
 .remotion/
 out/
+public/music/
 *.mp4
 *.webm
 *.mov
 *.avi
 *.mkv
 *.gif
+
 
