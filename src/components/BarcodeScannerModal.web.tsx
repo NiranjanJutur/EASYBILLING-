@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, Platform } from 'react-native';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { COLORS, RADIUS, SPACING } from '../config/theme';
 
 interface BarcodeScannerModalProps {
@@ -10,8 +10,24 @@ interface BarcodeScannerModalProps {
   continuous?: boolean;
 }
 
-/** Play a crisp POS scanner beep using Web Audio API */
-function playBeep() {
+/** Play sound using the real scan.mp3 from flutter_billing_app with oscillator fallback */
+function playScanSound() {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(100);
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    const audio = new Audio('/sounds/scan.mp3');
+    audio.play().catch(() => playOscillatorBeep());
+  } catch {
+    playOscillatorBeep();
+  }
+}
+
+function playOscillatorBeep() {
   try {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioCtx) return;
@@ -19,15 +35,15 @@ function playBeep() {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(1800, ctx.currentTime); // 1.8kHz POS beep
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    osc.frequency.setValueAtTime(1850, ctx.currentTime);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + 0.12);
   } catch {
-    // Ignore audio restrictions
+    // Ignore audio autoplay restrictions
   }
 }
 
@@ -40,18 +56,37 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const zxingReaderRef = useRef<any>(null);
   const intervalRef = useRef<any>(null);
-  const lastScannedCode = useRef<string>('');
-  const lastScannedTime = useRef<number>(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const lastScannedCode = useRef<string>('');
+  const lastScannedTime = useRef<number>(0);
+
   const [cameraActive, setCameraActive] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [manualCode, setManualCode] = useState('');
 
-  // Stop camera stream
-  const stopCamera = () => {
+  // Hardware controls
+  const [hasTorch, setHasTorch] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
+  const [zoomSupported, setZoomSupported] = useState(false);
+  const [maxZoom, setMaxZoom] = useState(3);
+  const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([]);
+  const [currentDeviceIndex, setCurrentDeviceIndex] = useState(0);
+
+  // Stop all camera and decoding processes
+  const stopCamera = useCallback(() => {
+    if (zxingReaderRef.current) {
+      try {
+        zxingReaderRef.current.reset();
+      } catch {
+        // ignore
+      }
+      zxingReaderRef.current = null;
+    }
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -64,73 +99,23 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       videoRef.current.srcObject = null;
     }
     setCameraActive(false);
-  };
+    setTorchOn(false);
+    setLoading(false);
+  }, []);
 
-  // Start camera and setup BarcodeDetector
-  const startCamera = async () => {
-    setCameraError(null);
-    try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setCameraError('Camera not supported by this browser. You can type or upload an image.');
-        return;
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        setCameraActive(true);
-        setupDetector();
-      }
-    } catch (err: any) {
-      setCameraError(err.message || 'Unable to access camera. Please allow camera permissions.');
-    }
-  };
-
-  const setupDetector = () => {
-    const hasBarcodeDetector = 'BarcodeDetector' in window;
-    let detector: any = null;
-    if (hasBarcodeDetector) {
-      try {
-        detector = new (window as any).BarcodeDetector({
-          formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'],
-        });
-      } catch {
-        detector = null;
-      }
-    }
-
-    // Interval scanning of video element
-    intervalRef.current = setInterval(async () => {
-      if (!videoRef.current || videoRef.current.readyState < 2) return;
-      if (detector) {
-        try {
-          const barcodes = await detector.detect(videoRef.current);
-          if (barcodes && barcodes.length > 0) {
-            const rawValue = barcodes[0].rawValue;
-            if (rawValue) handleDetected(rawValue);
-          }
-        } catch {
-          // ignore detector frame errors
-        }
-      }
-    }, 250);
-  };
-
-  const handleDetected = (code: string) => {
+  const handleDetected = useCallback((code: string) => {
     const clean = code.trim();
     if (!clean) return;
     const now = Date.now();
-    // Debounce 1.5s for same code
+
+    // Debounce duplicate reads within 1.5 seconds
     if (clean === lastScannedCode.current && now - lastScannedTime.current < 1500) {
       return;
     }
     lastScannedCode.current = clean;
     lastScannedTime.current = now;
 
-    playBeep();
+    playScanSound();
     setFeedback(`✅ Detected: ${clean}`);
 
     onScanned(clean);
@@ -141,12 +126,207 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         onClose();
       }, 350);
     }
+  }, [continuous, onClose, onScanned, stopCamera]);
+
+  // Start Camera with high resolution & continuous auto-focus
+  const startCamera = useCallback(async (deviceIndex = 0) => {
+    stopCamera();
+    setLoading(true);
+    setCameraError(null);
+
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setCameraError('Camera API is not supported in this browser environment.');
+        setLoading(false);
+        return;
+      }
+
+      // Discover video input devices
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(d => d.kind === 'videoinput');
+      setAvailableDevices(videoDevices);
+
+      const targetDevice = videoDevices[deviceIndex];
+      const videoConstraints: MediaTrackConstraints = targetDevice?.deviceId
+        ? { deviceId: { exact: targetDevice.deviceId } }
+        : { facingMode: { ideal: 'environment' } };
+
+      // High performance constraints matching mobile_scanner in Flutter
+      const constraints: MediaStreamConstraints = {
+        video: {
+          ...videoConstraints,
+          width: { ideal: 1920, min: 1280 },
+          height: { ideal: 1080, min: 720 },
+          ...({ focusMode: { ideal: 'continuous' } } as any),
+        },
+        audio: false,
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      streamRef.current = stream;
+
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        const capabilities = (track.getCapabilities ? track.getCapabilities() : {}) as any;
+        // Check Torch capability
+        if ('torch' in capabilities) {
+          setHasTorch(true);
+        }
+        // Check Zoom capability
+        if ('zoom' in capabilities) {
+          setZoomSupported(true);
+          setMaxZoom(capabilities.zoom.max || 3);
+        }
+      }
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        setCameraActive(true);
+        setLoading(false);
+        setupDecodingEngine();
+      }
+    } catch (err: any) {
+      console.error('Camera start error:', err);
+      setCameraError(err.message || 'Camera permission denied or camera device in use.');
+      setLoading(false);
+    }
+  }, [stopCamera]);
+
+  // Setup dual decoding engines (ZXing + Native BarcodeDetector fallback)
+  const setupDecodingEngine = () => {
+    const ZXing = (window as any).ZXing;
+
+    // Method 1: Use ZXing (identical to mobile_scanner in Flutter)
+    if (ZXing && ZXing.BrowserMultiFormatReader) {
+      try {
+        const hints = new Map();
+        // Optimize for retail barcodes
+        const formats = [
+          ZXing.BarcodeFormat.EAN_13,
+          ZXing.BarcodeFormat.EAN_8,
+          ZXing.BarcodeFormat.UPC_A,
+          ZXing.BarcodeFormat.UPC_E,
+          ZXing.BarcodeFormat.CODE_128,
+          ZXing.BarcodeFormat.CODE_39,
+          ZXing.BarcodeFormat.QR_CODE,
+          ZXing.BarcodeFormat.ITF,
+        ];
+        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+        hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+
+        const reader = new ZXing.BrowserMultiFormatReader(hints, 200);
+        zxingReaderRef.current = reader;
+
+        reader.decodeFromVideoElement(videoRef.current, (result: any, err: any) => {
+          if (result && result.getText()) {
+            handleDetected(result.getText());
+          }
+        });
+        return;
+      } catch (e) {
+        console.warn('ZXing init fallback to BarcodeDetector:', e);
+      }
+    }
+
+    // Method 2: Native BarcodeDetector API
+    if ('BarcodeDetector' in window) {
+      try {
+        const detector = new (window as any).BarcodeDetector({
+          formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'],
+        });
+
+        intervalRef.current = setInterval(async () => {
+          if (!videoRef.current || videoRef.current.readyState < 2) return;
+          try {
+            const barcodes = await detector.detect(videoRef.current);
+            if (barcodes && barcodes.length > 0) {
+              const raw = barcodes[0].rawValue;
+              if (raw) handleDetected(raw);
+            }
+          } catch {
+            // frame detection error
+          }
+        }, 180);
+        return;
+      } catch (e) {
+        console.warn('BarcodeDetector error:', e);
+      }
+    }
+
+    // Method 3: Fallback warning if neither engine available
+    setCameraError('Please use a modern browser (Chrome, Edge, or Safari) for live camera decoding, or upload an image.');
   };
 
-  // Image upload fallback for barcode detection
+  // Toggle Torch / Flashlight
+  const toggleTorch = async () => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (track) {
+      const nextState = !torchOn;
+      try {
+        await (track as any).applyConstraints({
+          advanced: [{ torch: nextState }],
+        });
+        setTorchOn(nextState);
+      } catch (e) {
+        console.error('Torch toggle failed:', e);
+      }
+    }
+  };
+
+  // Switch between cameras
+  const switchCamera = () => {
+    if (availableDevices.length <= 1) return;
+    const nextIndex = (currentDeviceIndex + 1) % availableDevices.length;
+    setCurrentDeviceIndex(nextIndex);
+    startCamera(nextIndex);
+  };
+
+  // Toggle Zoom level (1x -> 2x -> 1x)
+  const toggleZoom = async () => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (track && zoomSupported) {
+      const nextZoom = zoomLevel === 1 ? Math.min(2, maxZoom) : 1;
+      try {
+        await (track as any).applyConstraints({
+          advanced: [{ zoom: nextZoom }],
+        });
+        setZoomLevel(nextZoom);
+      } catch (e) {
+        console.error('Zoom constraint failed:', e);
+      }
+    }
+  };
+
+  // Image Upload Fallback
   const handleFileUpload = async (event: any) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    const ZXing = (window as any).ZXing;
+    if (ZXing && ZXing.BrowserMultiFormatReader) {
+      try {
+        const reader = new ZXing.BrowserMultiFormatReader();
+        const img = new Image();
+        img.src = URL.createObjectURL(file);
+        img.onload = async () => {
+          try {
+            const result = await reader.decodeFromImageElement(img);
+            if (result && result.getText()) {
+              handleDetected(result.getText());
+            } else {
+              setCameraError('No barcode recognized in the image.');
+            }
+          } catch {
+            setCameraError('Could not decode barcode from this image.');
+          }
+        };
+        return;
+      } catch {
+        // fallback
+      }
+    }
+
     if ('BarcodeDetector' in window) {
       try {
         const img = new Image();
@@ -163,16 +343,14 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           }
         };
       } catch {
-        setCameraError('Could not process image.');
+        setCameraError('Could not decode barcode from image.');
       }
-    } else {
-      setCameraError('Barcode detection from image requires a supported browser.');
     }
   };
 
   useEffect(() => {
     if (visible) {
-      startCamera();
+      startCamera(0);
     } else {
       stopCamera();
       setFeedback(null);
@@ -181,36 +359,78 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     return () => {
       stopCamera();
     };
-  }, [visible]);
+  }, [visible, startCamera, stopCamera]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={() => { stopCamera(); onClose(); }}>
       <View style={styles.overlay}>
         <View style={styles.container}>
-          {/* Header */}
+          {/* Top Bar matching Flutter POS Scanner */}
           <View style={styles.header}>
-            <Text style={styles.title}>{title}</Text>
-            <TouchableOpacity onPress={() => { stopCamera(); onClose(); }} style={styles.closeBtn}>
-              <Text style={styles.closeText}>✕</Text>
-            </TouchableOpacity>
+            <View style={styles.headerLeft}>
+              <Text style={styles.headerTitle}>{title}</Text>
+              <Text style={styles.headerSub}>
+                {continuous ? 'Continuous POS scan mode' : 'Hold barcode inside the box'}
+              </Text>
+            </View>
+
+            <View style={styles.headerControls}>
+              {/* Torch button */}
+              {hasTorch && (
+                <TouchableOpacity
+                  style={[styles.controlBtn, torchOn && styles.controlBtnActive]}
+                  onPress={toggleTorch}
+                >
+                  <Text style={styles.controlIcon}>{torchOn ? '🔦' : '⚡'}</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Zoom button */}
+              {zoomSupported && (
+                <TouchableOpacity
+                  style={[styles.controlBtn, zoomLevel > 1 && styles.controlBtnActive]}
+                  onPress={toggleZoom}
+                >
+                  <Text style={styles.controlText}>{zoomLevel}x</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Switch camera */}
+              {availableDevices.length > 1 && (
+                <TouchableOpacity style={styles.controlBtn} onPress={switchCamera}>
+                  <Text style={styles.controlIcon}>🔄</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Close */}
+              <TouchableOpacity onPress={() => { stopCamera(); onClose(); }} style={styles.closeBtn}>
+                <Text style={styles.closeText}>✕</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {/* Camera Viewfinder */}
+          {/* High-Resolution Viewfinder */}
           <View style={styles.viewport}>
             <video
               ref={videoRef}
               style={{
                 width: '100%',
-                height: 280,
+                height: 380,
                 objectFit: 'cover',
                 backgroundColor: '#000',
-                borderRadius: 8,
               }}
               playsInline
               muted
             />
 
-            {/* Scanning reticle / alignment box */}
+            {loading && (
+              <View style={styles.loaderOverlay}>
+                <ActivityIndicator size="large" color="#10B981" />
+                <Text style={styles.loaderText}>Starting camera…</Text>
+              </View>
+            )}
+
+            {/* Target Reticle Overlay with Neon Green Corners */}
             <View style={styles.reticleOverlay} pointerEvents="none">
               <View style={styles.reticleBox}>
                 <View style={[styles.corner, styles.tl]} />
@@ -219,25 +439,25 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                 <View style={[styles.corner, styles.br]} />
                 <View style={styles.laserLine} />
               </View>
-              <Text style={styles.reticleHint}>Align barcode within the frame</Text>
+              <Text style={styles.reticleHint}>Center barcode in the box</Text>
             </View>
           </View>
 
-          {/* Live Feedback */}
+          {/* Live Feedback Toast */}
           {feedback && (
             <View style={styles.feedbackBanner}>
               <Text style={styles.feedbackText}>{feedback}</Text>
             </View>
           )}
 
-          {/* Camera Error / Permission Banner */}
+          {/* Error Banner */}
           {cameraError && (
             <View style={styles.errorBanner}>
               <Text style={styles.errorText}>{cameraError}</Text>
             </View>
           )}
 
-          {/* Actions */}
+          {/* Bottom Bar */}
           <View style={styles.footer}>
             <TouchableOpacity
               style={styles.uploadBtn}
@@ -269,21 +489,19 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(0,0,0,0.8)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: SPACING.MD,
   },
   container: {
     width: '100%',
-    maxWidth: 440,
-    backgroundColor: '#fff',
+    maxWidth: 480,
+    backgroundColor: '#111827',
     borderRadius: RADIUS.LG,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
+    borderWidth: 1,
+    borderColor: '#374151',
   },
   header: {
     flexDirection: 'row',
@@ -291,43 +509,93 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: SPACING.MD,
     paddingVertical: 12,
+    backgroundColor: '#1f2937',
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#374151',
   },
-  title: {
+  headerLeft: {
+    flex: 1,
+  },
+  headerTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#111827',
+    color: '#f9fafb',
+  },
+  headerSub: {
+    fontSize: 11,
+    color: '#9ca3af',
+    marginTop: 2,
+  },
+  headerControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  controlBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#374151',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  controlBtnActive: {
+    backgroundColor: '#10B981',
+  },
+  controlIcon: {
+    fontSize: 16,
+  },
+  controlText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   closeBtn: {
     padding: 6,
+    marginLeft: 4,
   },
   closeText: {
     fontSize: 18,
-    color: '#6b7280',
+    color: '#9ca3af',
     fontWeight: '600',
   },
   viewport: {
     position: 'relative',
-    height: 280,
+    height: 380,
     backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loaderOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  loaderText: {
+    color: '#fff',
+    fontSize: 13,
+    marginTop: 10,
+    fontWeight: '600',
   },
   reticleOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 5,
   },
   reticleBox: {
-    width: 220,
-    height: 140,
+    width: 260,
+    height: 160,
     position: 'relative',
     justifyContent: 'center',
     alignItems: 'center',
   },
   corner: {
     position: 'absolute',
-    width: 20,
-    height: 20,
+    width: 24,
+    height: 24,
     borderColor: '#10B981',
   },
   tl: { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3 },
@@ -337,39 +605,39 @@ const styles = StyleSheet.create({
   laserLine: {
     width: '100%',
     height: 2,
-    backgroundColor: 'rgba(239, 68, 68, 0.85)',
+    backgroundColor: 'rgba(239, 68, 68, 0.9)',
     shadowColor: '#ef4444',
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
+    shadowOpacity: 0.9,
+    shadowRadius: 6,
   },
   reticleHint: {
     color: '#fff',
     fontSize: 12,
-    marginTop: 12,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 10,
+    marginTop: 16,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 12,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderRadius: 6,
   },
   feedbackBanner: {
-    backgroundColor: '#dcfce7',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    backgroundColor: '#065f46',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     alignItems: 'center',
   },
   feedbackText: {
-    color: '#15803d',
+    color: '#34d399',
     fontWeight: '700',
     fontSize: 13,
   },
   errorBanner: {
-    backgroundColor: '#fee2e2',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    backgroundColor: '#7f1d1d',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     alignItems: 'center',
   },
   errorText: {
-    color: '#b91c1c',
+    color: '#fca5a5',
     fontSize: 12,
     textAlign: 'center',
   },
@@ -377,30 +645,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     padding: SPACING.MD,
-    backgroundColor: '#f9fafb',
+    backgroundColor: '#1f2937',
     borderTopWidth: 1,
-    borderTopColor: '#eee',
-    gap: 8,
+    borderTopColor: '#374151',
+    gap: 10,
   },
   uploadBtn: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 11,
     borderRadius: RADIUS.MD,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
+    backgroundColor: '#374151',
     alignItems: 'center',
   },
   uploadBtnText: {
-    color: '#374151',
+    color: '#f9fafb',
     fontWeight: '600',
     fontSize: 13,
   },
   doneBtn: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 11,
     borderRadius: RADIUS.MD,
-    backgroundColor: COLORS.PRIMARY,
+    backgroundColor: '#10B981',
     alignItems: 'center',
   },
   doneBtnText: {
