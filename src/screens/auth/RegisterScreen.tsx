@@ -582,6 +582,9 @@ const RegisterScreen = ({ onComplete }: RegisterScreenProps) => {
           value={data.ownerPin || ''}
           onChangeText={v => update('ownerPin', v.replace(/\D/g, '').slice(0, 4))}
           keyboardType="number-pad"
+          inputMode="numeric"
+          autoComplete="off"
+          textContentType="none"
           secureTextEntry
           maxLength={4}
           autoFocus
@@ -597,6 +600,9 @@ const RegisterScreen = ({ onComplete }: RegisterScreenProps) => {
           value={confirmPin}
           onChangeText={v => { setConfirmPin(v.replace(/\D/g, '').slice(0, 4)); setErrors(prev => { const n = { ...prev }; delete n.confirmPin; return n; }); }}
           keyboardType="number-pad"
+          inputMode="numeric"
+          autoComplete="off"
+          textContentType="none"
           secureTextEntry
           maxLength={4}
         />

@@ -13,41 +13,74 @@
 ## 🌐 Live Web Demo
 
 Try the live Web POS right in your browser (no installation required):  
-👉 **[easybilling-green.vercel.app](https://easybilling-green.vercel.app/)**
+👉 **[https://easybilling-green.vercel.app/](https://easybilling-green.vercel.app/)**
 
 ---
 
-## 🌟 Key Highlights
+## 🌟 Highlights
 
-- **⚡ 100% Offline-First Local Architecture:** Operates entirely on device memory and local storage (`AsyncStorage` / `kvStore`). Never stops billing even if internet or Wi-Fi drops. (Optional Supabase cloud sync for multi-counter shops).
-- **🚀 2-Minute Onboarding Wizard:** First launch wizard gets the store ready in 2 minutes. Configures shop profile, 36 Indian state GST codes, UPI VPA, and a **4-digit PIN** (with smart blocking of weak PINs like `1234`, `0000`, and birth years).
-- **🌐 5 Indian Regional Languages:** Full native UI support for:
-  - English
-  - Kannada (ಕನ್ನಡ)
-  - Hindi (हिन्दी)
-  - Telugu (తెలుగు)
-  - Marathi (मराठी)
-- **📷 Continuous Rear-Camera Barcode Scanner:** Real-time decoding powered by ZXing and Android Vision Camera with exact lens-locking to prevent camera-flipping glitches.
-- **📋 Smart Indian GST Compliance:** Full CGST/SGST/IGST breakdown with round-off and amount-in-words converter. Automatically issues **"Bill of Supply"** for Composition Scheme dealers and **"Tax Invoice"** for Regular GST shops.
-- **📒 Smart Udhaar Khata (Credit Ledger):** Digital credit tracking with customizable limits, balance safeguards, and 1-click **WhatsApp payment reminders** with dynamic UPI QR codes.
-- **🖨️ Thermal Printing & PDF Receipts:** Formatted for standard 2-inch (58mm) and 3-inch (80mm) thermal receipt printers, as well as printable PDFs with QR codes.
-
----
-
-## 🛠️ Feature Overview
-
-| Area | Features |
-|---|---|
-| **POS Billing** | Fast cart management, item quantity stepper, weight-based & piece-based pricing, instant search, barcode scan trigger, and multi-mode settlement. |
-| **Payment Modes** | Cash, UPI, Card, Udhaar (Credit), and Split settlement with dynamic bill-total UPI QR codes. |
-| **GST & Compliance** | 36 Indian state codes, HSN codes, multi-slab tax breakdowns, customer GSTIN verification, and Composition Scheme support. |
-| **Customer Credit (Udhaar)** | Profile management, credit limits, outstanding balances, repayment history, and WhatsApp reminder buttons. |
-| **Inventory & Purchasing** | Low-stock alerts, supplier tracking, purchase entries, and stock adjustments. |
-| **Security & Roles** | Strictly 4-digit PIN login with roles for Owner, Cashier, Stock Manager, and Accountant. |
+- **Fast billing:** Create GST-ready invoices for in-store, takeaway, delivery, and wholesale orders.
+- **Flexible payments:** Record cash, UPI, card, credit (udhaar), or split payments. Dynamic UPI QR codes generated for exact bill totals.
+- **Invoices you can use:** Share clean text receipts, send via WhatsApp or device share sheets, and generate printable PDF invoices.
+- **GST support:** Store customer GSTIN details, item tax rates, invoice tax summaries, and compliance-ready bill information. Supports both **Regular (Tax Invoice)** and **Composition Scheme (Bill of Supply)**.
+- **Inventory control:** Manage products, stock, suppliers, purchases, restocking, and low-stock alerts.
+- **Customer ledger (Udhaar):** Keep customer profiles, credit balances, repayments, transaction history, and GSTIN details with WhatsApp payment reminders.
+- **100% Offline-First:** Local storage is the default (`AsyncStorage` / `kvStore`), so everyday billing continues seamlessly without an internet connection.
+- **Strict 4-Digit PIN Security:** No passwords required. Role-based views for Owner, Cashier, Stock Manager, and Accountant.
+- **Multi-Language by Default:** Full native UI support for 5 Indian languages: **English, Kannada (ಕನ್ನಡ), Hindi (हिन्दी), Telugu (తెలుగు), and Marathi (मराठी)**.
+- **Continuous Barcode Scanning:** Powered by ZXing and Android Vision Camera with rear camera lens-locking to prevent camera-flipping glitches.
+- **First-Launch Wizard:** 6-step onboarding wizard gets any shop ready in 2 minutes.
 
 ---
 
-## 🚀 Quick Start
+## 📋 Comprehensive Feature List
+
+| Area | Included Capabilities |
+| --- | --- |
+| **Billing** | Cart management, item quantities, discounts, multi-slab taxes, bill numbers, order types, and completed-bill history |
+| **Payments** | Cash, UPI, card, credit (udhaar), split settlement, and bill-total UPI QR codes |
+| **Invoices** | GST tax invoice, Bill of Supply (Composition), text receipt, WhatsApp/device sharing, PDF export, and thermal printing workflow (58mm/80mm) |
+| **Products & Stock** | Product catalogue, barcode lookup, stock adjustments, suppliers, purchases, and restocking |
+| **Customers & Credit** | Customer profiles, phone numbers, GSTIN input, credit limits, outstanding balances, repayments, and transaction history |
+| **GST & Compliance** | 36 Indian state codes, item GST rates, HSN-ready product data, tax totals, customer GSTINs, and compliance records |
+| **Reports** | Owner dashboard, daily sales summaries, bill history, low-stock visibility, and accountant reports |
+| **Input Tools** | Continuous rear-camera barcode scanning, camera capture, handwritten-slip processing, voice input, and manual catalogue search |
+| **AI Assistance** | Optional product/slip recognition and stock insights when configured |
+| **Privacy & Local Mode** | Local-first storage, generic demo data, and optional cloud synchronization via Supabase |
+
+---
+
+## 📱 Screens & Views
+
+- **First-Launch Onboarding:** 6-step shop setup (Language, Shop Details, State GST, 4-digit PIN, UPI VPA)
+- **Store Authentication:** 4-digit PIN numeric keypad with store selector and language switcher
+- **Home & Quick Actions:** Today's sales metrics, quick scan, slip processing, new bill
+- **Billing POS:** Product catalogue grid, live stock indicators, active cart, and multi-mode payment checkout
+- **Inventory Management:** Products, stock alerts, suppliers, purchase entries, and godown stock
+- **Customer Ledger (Udhaar):** Customer profiles, credit limits, outstanding balances, and 1-click WhatsApp reminders
+- **Owner Dashboard:** Business compliance overview, daily sales summary, and revenue tracking
+- **Accountant Dashboard:** Tax slab breakdowns, CGST/SGST/IGST reports, and financial summaries
+- **Store Settings:** Shop information, staff PINs, and feature toggles
+
+---
+
+## 💼 Business Workflows
+
+### 1. Daily POS Billing
+Search, scan barcode, or speak an item; select the customer and order type; collect payment (Cash, UPI, Card, Udhaar, or Split); then share via WhatsApp or print the GST invoice. Completing a bill automatically updates local sales history and stock records.
+
+### 2. Customer Credit (Udhaar Khata)
+Set credit limits per customer, issue credit sales safely, and record repayments later. View outstanding balances and transaction history at the counter, with 1-click WhatsApp payment reminders with dynamic UPI QR codes.
+
+### 3. Handwritten Customer Slips
+Capture handwritten customer slips with device camera, review extracted items, correct quantities or prices, and send confirmed items straight to the billing cart.
+
+### 4. Stock and Supplier Purchases
+Maintain a product catalogue with purchase prices, selling prices, supplier details, GST rates, and reorder thresholds. Log supplier invoices and track supplier payables.
+
+---
+
+## 🚀 Running Locally
 
 ### Prerequisites
 - Node.js 18+ (tested up to Node 24)
@@ -68,17 +101,17 @@ copy .env.example .env
 # macOS / Linux
 cp .env.example .env
 ```
-*Note: The default `.env` is configured for `DATA_MODE=LOCAL`, requiring no external database or API keys.*
+*Note: The template default is `DATA_MODE=LOCAL`. No cloud account, API key, or database setup is required for local billing.*
 
-### 3. Run Locally
+### 3. Start the Application
 
-**Run Web POS (Vite):**
+**Web POS (Vite):**
 ```bash
 npm run web:dev
 ```
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-**Run Android App (React Native):**
+**Android App (React Native):**
 ```bash
 npm run android
 ```
@@ -89,36 +122,65 @@ npm run android
 
 | Role | 4-Digit PIN | Permissions |
 |---|---|---|
-| **Owner** | `1990` *(or custom set during registration)* | Full administrative access, settings, PIN management |
-| **Cashier** | `2001` | Fast POS billing, customer checkout, payment collection |
+| **Owner** | `1990` *(or custom set during registration)* | Full administrative access, settings, store profile |
+| **Cashier** | `2001` | Fast POS billing, checkout, payment collection |
 | **Stock Manager** | `1985` | Product catalog, supplier orders, purchase entries |
 | **Accountant** | `1995` | Tax summaries, daily sales reports, compliance view |
+
+*Note: Change these demo PINs or complete the first-launch registration wizard before using the app in a production store.*
+
+---
+
+## ☁️ Optional Cloud Sync
+
+EasyBilling is local-first. Optional Supabase synchronization is available for multi-counter or multi-device setups:
+1. Set `DATA_MODE=SUPABASE` in `.env`.
+2. Add your public Supabase URL and anonymous key.
+3. Database migrations and Edge Functions are located under `supabase/`.
 
 ---
 
 ## 🎬 Marketing & Promo Video (Remotion)
 
-This repository includes a programmatic marketing video studio powered by [Remotion](https://remotion.dev):
+This repository includes an automated video generator built with [Remotion](https://remotion.dev):
 
 ```bash
 cd promo-video
 npm install
-npm start # Interactive Remotion Studio player
-npm run build # Render Full HD MP4 video
+npm start       # Interactive browser player (Remotion Studio)
+npm run build   # Render 1080p Full HD MP4 video with upbeat music
 ```
-Check [MARKETING_AND_REDDIT_GUIDE.md](MARKETING_AND_REDDIT_GUIDE.md) for ready-to-use launch templates and social media copy.
+
+See [MARKETING_AND_REDDIT_GUIDE.md](MARKETING_AND_REDDIT_GUIDE.md) for ready-to-use launch templates and social media copy.
+
+---
+
+## 📁 Project Structure
+
+```text
+src/
+├── components/          # Reusable UI components (Barcode scanner modal, POS reticle)
+├── config/              # Constants, themes, Indian state GST codes, environment
+├── context/             # StoreContext, SessionContext
+├── models/              # TypeScript interfaces (Product, Customer, Transaction, Registration)
+├── navigation/          # React Navigation stacks (Owner, Cashier, Stock Manager, Accountant)
+├── screens/             # Screen components (Auth, Billing, Inventory, Customers, Dashboard)
+├── services/            # Billing taxCalc, invoiceTemplate, local kvStore, offline sync
+└── utils/               # i18n translations (5 languages), currency formatters, ID generators
+android/                 # Android native project files
+promo-video/             # Remotion programmatic marketing video studio
+__tests__/               # Jest test suites (tax calculation, registration security)
+```
 
 ---
 
 ## 🤝 Contributing
 
-We welcome contributions from developers, designers, and store owners! 
-
-Check out [CONTRIBUTING.md](CONTRIBUTING.md) to get started. High-priority areas where you can help:
-- [ ] **Thermal Printer Drivers:** ESC/POS Bluetooth & USB drivers for Android and Web.
-- [ ] **Voice-to-Cart:** Offline voice-assisted item lookup (Web Speech API / Bhashini).
-- [ ] **More Languages:** Bengali, Tamil, Gujarati, Malayalam, and Odia translations.
-- [ ] **Device Testing:** Real-world testing across different Android phones, tablets, and POS devices.
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) to get started. High-priority areas:
+- [ ] **Thermal Receipt Printers:** ESC/POS Bluetooth & USB drivers (58mm/80mm).
+- [ ] **Voice-to-Cart:** Offline voice-assisted item search (Web Speech API / Bhashini).
+- [ ] **More Languages:** Additional Indian regional languages (Tamil, Gujarati, Bengali, Malayalam).
+- [ ] **Hardware Testing:** Testing on various Android POS terminals and tablets.
 
 ---
 

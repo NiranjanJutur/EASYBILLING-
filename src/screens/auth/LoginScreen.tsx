@@ -183,11 +183,14 @@ const LoginScreen = ({ onLogin, onLangChange, onRegisterPress }: LoginScreenProp
                             }}
                             onSubmitEditing={handleLogin}
                             keyboardType="number-pad"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            textContentType="none"
                             secureTextEntry
                             maxLength={4}
                             autoFocus={Platform.OS === 'web'}
                             style={styles.hiddenInput}
-                            accessibilityLabel="PIN"
+                            accessibilityLabel="4-Digit PIN"
                         />
 
                         {error ? <Text style={styles.errorText}>{error}</Text> : null}
