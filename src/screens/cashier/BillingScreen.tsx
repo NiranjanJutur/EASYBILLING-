@@ -239,6 +239,10 @@ export const BillingScreen: React.FC<{ route?: { params?: RouteParams }; navigat
     });
   }, []);
 
+  const handleCloseScanner = useCallback(() => {
+    setShowBarcodeScanner(false);
+  }, []);
+
   const handleBarcodeScanned = useCallback((code: string) => {
     const clean = code.trim().toLowerCase();
     const product = products.find(p =>
@@ -249,11 +253,8 @@ export const BillingScreen: React.FC<{ route?: { params?: RouteParams }; navigat
       setScanToast(`✅ Added: ${product.name} (₹${product.price})`);
       setTimeout(() => setScanToast(null), 2500);
     } else {
-      Alert.alert(
-        'Barcode Not Found',
-        `No product in catalog matches barcode "${code}".\n\nYou can add this barcode to the product in the Add Product form.`,
-        [{ text: 'OK' }]
-      );
+      setScanToast(`⚠️ Barcode "${code}" not found in catalog`);
+      setTimeout(() => setScanToast(null), 3500);
     }
   }, [products, addToCart]);
 
@@ -1063,7 +1064,7 @@ export const BillingScreen: React.FC<{ route?: { params?: RouteParams }; navigat
       <BarcodeScannerModal
         visible={showBarcodeScanner}
         continuous={true}
-        onClose={() => setShowBarcodeScanner(false)}
+        onClose={handleCloseScanner}
         onScanned={handleBarcodeScanned}
         title="Scan Barcodes to Add to Cart"
       />

@@ -59,8 +59,19 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Keep callback refs stable to prevent camera teardown on parent re-renders
+  const onScannedRef = useRef(onScanned);
+  onScannedRef.current = onScanned;
+
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  const continuousRef = useRef(continuous);
+  continuousRef.current = continuous;
+
   const lastScannedCode = useRef<string>('');
   const lastScannedTime = useRef<number>(0);
+  const activeDeviceIdRef = useRef<string | null>(null);
 
   const [cameraActive, setCameraActive] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -113,16 +124,20 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
     playScanSound();
     setFeedback(`✅ ${clean}`);
+    setTimeout(() => {
+      setFeedback(prev => (prev === `✅ ${clean}` ? null : prev));
+    }, 1800);
 
-    onScanned(clean);
+    // Call parent handler without causing camera to restart
+    onScannedRef.current(clean);
 
-    if (!continuous) {
+    if (!continuousRef.current) {
       setTimeout(() => {
         stopScanner();
-        onClose();
+        onCloseRef.current();
       }, 350);
     }
-  }, [continuous, onClose, onScanned, stopScanner]);
+  }, [stopScanner]);
 
   // Apply Hardware / Software Zoom
   const applyZoom = useCallback(async (newZoom: number) => {
@@ -140,7 +155,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         } else {
           setHardwareZoomSupported(false);
         }
-      } catch (e) {
+      } catch {
         setHardwareZoomSupported(false);
       }
     }
@@ -184,7 +199,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   }, []);
 
   // Start Scanner with self-hosted ZXing engine & continuous auto-focus
-  const startScanner = useCallback(async (deviceIdx = 0) => {
+  // IMPORTANT: ALWAYS default to environment (rear) camera unless user explicitly selected a device
+  const startScanner = useCallback(async (explicitDeviceId?: string) => {
     stopScanner();
     setLoading(true);
     setCameraError(null);
@@ -197,15 +213,15 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         return;
       }
 
-      // Enumerate camera devices
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const cameras = devices.filter(d => d.kind === 'videoinput');
-      setVideoDevices(cameras);
-
-      const targetCamera = cameras[deviceIdx];
-      const videoConstraints: MediaTrackConstraints = targetCamera?.deviceId
-        ? { deviceId: { exact: targetCamera.deviceId } }
-        : { facingMode: { ideal: 'environment' } };
+      // If user explicitly switched to a deviceId, use it;
+      // otherwise, ALWAYS default to facingMode: 'environment' (back/rear camera)
+      let videoConstraints: MediaTrackConstraints;
+      if (explicitDeviceId) {
+        videoConstraints = { deviceId: { exact: explicitDeviceId } };
+        activeDeviceIdRef.current = explicitDeviceId;
+      } else {
+        videoConstraints = { facingMode: { ideal: 'environment' } };
+      }
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -216,6 +232,28 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         audio: false,
       });
       streamRef.current = stream;
+
+      // Populate camera list with real labels now that camera permission is granted
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cameras = devices.filter(d => d.kind === 'videoinput');
+        setVideoDevices(cameras);
+
+        // Find which camera is currently in use
+        const activeTrack = stream.getVideoTracks()[0];
+        const settings = activeTrack?.getSettings ? activeTrack.getSettings() : ({} as any);
+        const currentId = settings.deviceId || explicitDeviceId;
+        if (currentId) {
+          activeDeviceIdRef.current = currentId;
+          const idx = cameras.findIndex(c => c.deviceId === currentId);
+          if (idx >= 0) setSelectedDeviceIndex(idx);
+        } else {
+          const rearIdx = cameras.findIndex(c => /back|rear|environment/i.test(c.label));
+          if (rearIdx >= 0) setSelectedDeviceIndex(rearIdx);
+        }
+      } catch {
+        // ignore enumeration errors
+      }
 
       const track = stream.getVideoTracks()[0];
       if (track) {
@@ -266,7 +304,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           const codeReader = new ZXing.BrowserMultiFormatReader(hints, 180);
           zxingReaderRef.current = codeReader;
 
-          codeReader.decodeFromVideoElement(videoRef.current, (result: any, err: any) => {
+          codeReader.decodeFromVideoElement(videoRef.current, (result: any) => {
             if (result && result.getText()) {
               handleDetected(result.getText());
             }
@@ -311,12 +349,15 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   };
 
-  // Switch Camera
+  // Switch Camera to next available device
   const switchCamera = () => {
     if (videoDevices.length <= 1) return;
     const nextIdx = (selectedDeviceIndex + 1) % videoDevices.length;
     setSelectedDeviceIndex(nextIdx);
-    startScanner(nextIdx);
+    const target = videoDevices[nextIdx];
+    if (target?.deviceId) {
+      startScanner(target.deviceId);
+    }
   };
 
   // Image Upload fallback
@@ -348,24 +389,26 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   };
 
+  // Camera lifecycle: ONLY starts when modal opens, stops when modal closes.
+  // NEVER re-runs on parent re-renders or handler reference changes!
   useEffect(() => {
     if (visible) {
-      startScanner(0);
+      startScanner();
     } else {
       stopScanner();
     }
     return () => {
       stopScanner();
     };
-  }, [visible, startScanner, stopScanner]);
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={() => { stopScanner(); onClose(); }}>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={() => { stopScanner(); onCloseRef.current(); }}>
       <View style={styles.overlay}>
         <View style={styles.container}>
           {/* Header matching Flutter's ScannerPage */}
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => { stopScanner(); onClose(); }} style={styles.backButton}>
+            <TouchableOpacity onPress={() => { stopScanner(); onCloseRef.current(); }} style={styles.backButton}>
               <Text style={styles.backIcon}>←</Text>
               <Text style={styles.title}>{title}</Text>
             </TouchableOpacity>
@@ -436,7 +479,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               </View>
             )}
 
-            {/* Target Reticle ($250x$250 exact Flutter Scanner style) */}
+            {/* Target Reticle (exact Flutter Scanner style) */}
             <View style={styles.targetLayer} pointerEvents="none">
               <View style={styles.reticleBox}>
                 {/* 4 White Corner L-shapes */}
@@ -495,7 +538,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             <Text style={styles.footerHint}>
               {continuous ? 'Continuous POS Mode: holds camera active' : 'Tap camera view to auto-focus'}
             </Text>
-            <TouchableOpacity style={styles.doneBtn} onPress={() => { stopScanner(); onClose(); }}>
+            <TouchableOpacity style={styles.doneBtn} onPress={() => { stopScanner(); onCloseRef.current(); }}>
               <Text style={styles.doneBtnText}>Done</Text>
             </TouchableOpacity>
           </View>
