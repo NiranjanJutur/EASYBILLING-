@@ -66,7 +66,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [adjustingNotice, setAdjustingNotice] = useState<string | null>(null);
 
+  // Zoom & Focus states
+  const [zoom, setZoom] = useState<number>(1.5);
+  const [hardwareZoomSupported, setHardwareZoomSupported] = useState(false);
   const [hasTorch, setHasTorch] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
@@ -120,7 +124,66 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   }, [continuous, onClose, onScanned, stopScanner]);
 
-  // Start Scanner with self-hosted ZXing engine
+  // Apply Hardware / Software Zoom
+  const applyZoom = useCallback(async (newZoom: number) => {
+    setZoom(newZoom);
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (track) {
+      try {
+        const caps = (track.getCapabilities ? track.getCapabilities() : {}) as any;
+        if (caps.zoom) {
+          const clamped = Math.max(caps.zoom.min || 1, Math.min(newZoom, caps.zoom.max || 3));
+          await (track as any).applyConstraints({
+            advanced: [{ zoom: clamped }],
+          });
+          setHardwareZoomSupported(true);
+        } else {
+          setHardwareZoomSupported(false);
+        }
+      } catch (e) {
+        setHardwareZoomSupported(false);
+      }
+    }
+  }, []);
+
+  // Auto-Adjust Focus, Exposure, and Zoom
+  const autoAdjustCamera = useCallback(async () => {
+    setAdjustingNotice('✨ Calibrating focus & auto-zoom…');
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (track) {
+      try {
+        const caps = (track.getCapabilities ? track.getCapabilities() : {}) as any;
+        const adv: any = {};
+        if (caps.focusMode?.includes('continuous')) adv.focusMode = 'continuous';
+        if (caps.exposureMode?.includes('continuous')) adv.exposureMode = 'continuous';
+        if (caps.whiteBalanceMode?.includes('continuous')) adv.whiteBalanceMode = 'continuous';
+        if (caps.pointsOfInterest) adv.pointsOfInterest = [{ x: 0.5, y: 0.5 }];
+        if (caps.zoom) {
+          const optimal = Math.min(2.0, caps.zoom.max || 2.0);
+          adv.zoom = optimal;
+          setZoom(optimal);
+          setHardwareZoomSupported(true);
+        } else {
+          setZoom(2.0); // software 2x digital zoom
+        }
+
+        if (Object.keys(adv).length > 0) {
+          await (track as any).applyConstraints({ advanced: [adv] });
+        }
+      } catch {
+        setZoom(2.0);
+      }
+    } else {
+      setZoom(2.0);
+    }
+
+    setTimeout(() => {
+      setAdjustingNotice('✅ Camera focused & zoomed');
+      setTimeout(() => setAdjustingNotice(null), 1800);
+    }, 400);
+  }, []);
+
+  // Start Scanner with self-hosted ZXing engine & continuous auto-focus
   const startScanner = useCallback(async (deviceIdx = 0) => {
     stopScanner();
     setLoading(true);
@@ -158,6 +221,24 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       if (track) {
         const caps = (track.getCapabilities ? track.getCapabilities() : {}) as any;
         if ('torch' in caps) setHasTorch(true);
+
+        // Auto-configure optimal focus and default 1.5x zoom
+        const adv: any = {};
+        if (caps.focusMode?.includes('continuous')) adv.focusMode = 'continuous';
+        if (caps.exposureMode?.includes('continuous')) adv.exposureMode = 'continuous';
+        if (caps.zoom) {
+          const initialZoom = Math.min(1.5, caps.zoom.max || 1.5);
+          adv.zoom = initialZoom;
+          setZoom(initialZoom);
+          setHardwareZoomSupported(true);
+        } else {
+          setZoom(1.5);
+          setHardwareZoomSupported(false);
+        }
+
+        if (Object.keys(adv).length > 0) {
+          track.applyConstraints({ advanced: [adv] }).catch(() => undefined);
+        }
       }
 
       if (videoRef.current) {
@@ -290,6 +371,14 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             </TouchableOpacity>
 
             <View style={styles.headerActions}>
+              {/* Auto-Adjust Focus & Zoom */}
+              <TouchableOpacity
+                style={styles.autoAdjustBtn}
+                onPress={autoAdjustCamera}
+              >
+                <Text style={styles.autoAdjustText}>✨ Auto-Focus</Text>
+              </TouchableOpacity>
+
               {hasTorch && (
                 <TouchableOpacity
                   style={[styles.actionBtn, torchOn && styles.actionBtnActive]}
@@ -321,19 +410,24 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             </View>
           </View>
 
-          {/* Full Camera Viewfinder */}
-          <View style={styles.viewport}>
-            <video
-              ref={videoRef}
-              style={{
-                width: '100%',
-                height: 380,
-                objectFit: 'cover',
-                backgroundColor: '#000',
-              }}
-              playsInline
-              muted
-            />
+          {/* Full Camera Viewfinder with Digital/Hardware Zoom */}
+          <View style={styles.viewport} onClick={autoAdjustCamera}>
+            <div style={{ width: '100%', height: '100%', overflow: 'hidden', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+              <video
+                ref={videoRef}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  backgroundColor: '#000',
+                  transform: !hardwareZoomSupported && zoom > 1 ? `scale(${zoom})` : 'none',
+                  transformOrigin: 'center center',
+                  transition: 'transform 0.2s ease-out',
+                }}
+                playsInline
+                muted
+              />
+            </div>
 
             {loading && (
               <View style={styles.loadingBox}>
@@ -355,7 +449,32 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               </View>
               <Text style={styles.instructions}>Align barcode within frame</Text>
             </View>
+
+            {/* Zoom selector pills (1.0x, 1.5x, 2.0x, 2.5x) */}
+            <View style={styles.zoomBar}>
+              {[1.0, 1.5, 2.0, 2.5].map((level) => (
+                <TouchableOpacity
+                  key={level}
+                  style={[styles.zoomPill, zoom === level && styles.zoomPillActive]}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    applyZoom(level);
+                  }}
+                >
+                  <Text style={[styles.zoomPillText, zoom === level && styles.zoomPillTextActive]}>
+                    {level.toFixed(1)}x
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
+
+          {/* Calibrating Notification */}
+          {adjustingNotice && (
+            <View style={styles.adjustingBanner}>
+              <Text style={styles.adjustingText}>{adjustingNotice}</Text>
+            </View>
+          )}
 
           {/* Detected Feedback Toast */}
           {feedback && (
@@ -374,7 +493,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           {/* Bottom Bar */}
           <View style={styles.footer}>
             <Text style={styles.footerHint}>
-              {continuous ? 'Continuous POS Mode: holds camera active' : 'Auto-captures when aligned'}
+              {continuous ? 'Continuous POS Mode: holds camera active' : 'Tap camera view to auto-focus'}
             </Text>
             <TouchableOpacity style={styles.doneBtn} onPress={() => { stopScanner(); onClose(); }}>
               <Text style={styles.doneBtnText}>Done</Text>
@@ -430,12 +549,25 @@ const styles = StyleSheet.create({
   },
   headerActions: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    gap: 6,
+  },
+  autoAdjustBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: '#0284c7',
+    marginRight: 4,
+  },
+  autoAdjustText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
   },
   actionBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: '#334155',
     justifyContent: 'center',
     alignItems: 'center',
@@ -444,14 +576,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#10b981',
   },
   actionIcon: {
-    fontSize: 16,
+    fontSize: 15,
   },
   viewport: {
     position: 'relative',
-    height: 380,
+    height: 400,
     backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
+    cursor: 'pointer',
   },
   loadingBox: {
     ...StyleSheet.absoluteFillObject,
@@ -500,13 +633,53 @@ const styles = StyleSheet.create({
   },
   instructions: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    marginTop: 22,
+    marginTop: 18,
     backgroundColor: 'rgba(0,0,0,0.65)',
     paddingHorizontal: 16,
-    paddingVertical: 6,
+    paddingVertical: 5,
     borderRadius: 8,
+  },
+  zoomBar: {
+    position: 'absolute',
+    bottom: 12,
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    zIndex: 15,
+  },
+  zoomPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  zoomPillActive: {
+    backgroundColor: '#10b981',
+  },
+  zoomPillText: {
+    color: '#cbd5e1',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  zoomPillTextActive: {
+    color: '#ffffff',
+    fontWeight: '800',
+  },
+  adjustingBanner: {
+    backgroundColor: '#0284c7',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  adjustingText: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 12,
   },
   feedbackBanner: {
     backgroundColor: '#065f46',
