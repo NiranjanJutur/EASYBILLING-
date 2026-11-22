@@ -19,7 +19,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   TextInput, Alert, ActivityIndicator, Modal, ScrollView,
-  Platform, Dimensions, KeyboardAvoidingView, Share,
+  Platform, Dimensions, KeyboardAvoidingView,
 } from 'react-native';
 import {
   getProducts, getCustomers, createSale,
@@ -31,7 +31,12 @@ import type { TransactionItem, PaymentType, OrderType } from '../../models/Trans
 import { useSession } from '../../context/SessionContext';
 import { useStore } from '../../context/StoreContext';
 import UpiQrModal from '../../components/UpiQrModal';
-import { buildBillMessage } from '../../services/whatsapp/whatsappService';
+import { computeTax } from '../../services/billing/taxCalc';
+import {
+  buildTextMessage, downloadPDF, printBill,
+  shareViaWhatsApp, shareViaNativeShare,
+} from '../../services/billing/billShareService';
+import type { InvoiceData } from '../../services/billing/invoiceTemplate';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -295,34 +300,93 @@ export const BillingScreen: React.FC<{ route?: { params?: RouteParams }; navigat
     }
   }, [cart, totals, payment, split, selectedCustomer, discountAmount, orderType, staff, billerName]);
 
-  const shareBill = useCallback(async () => {
-    if (!receipt) return;
-    const message = buildBillMessage({
-      billNo: receipt.billNo,
-      timestamp: receipt.timestamp,
+  /** Build a consistent InvoiceData object from current receipt state */
+  const buildInvoiceData = useCallback((): InvoiceData | null => {
+    if (!receipt) return null;
+
+    // Re-compute tax using the shared taxCalc function so modal/PDF/print always match
+    const taxLines = receipt.items.map((it: any) => ({
+      productId: it.productId ?? it.name,
+      name:      it.name,
+      qty:       it.qty,
+      unit:      it.unit ?? 'pcs',
+      price:     it.price,
+      gst:       it.gst ?? 0,
+      hsn:       it.hsn ?? '',
+    }));
+    const tax = computeTax(taxLines, {
+      discountRupees: receipt.discount ?? 0,
+      storeGstin:    activeStore.gstin,
+      customerGstin: selectedCustomer?.gstNumber,
+    });
+
+    return {
+      billNo:       receipt.billNo,
+      timestamp:    receipt.timestamp,
       customerName: selectedCustomer?.name ?? receipt.customerName ?? 'Walk-in',
-      customerGstNumber: selectedCustomer?.gstNumber,
-      items: receipt.items,
-      subtotal: receipt.subtotal,
-      totalGST: receipt.totalGST,
-      grandTotal: receipt.grandTotal,
-      discount: receipt.discount,
+      customerGstin: selectedCustomer?.gstNumber ?? null,
+      customerPhone: selectedCustomer?.phone,
+      billerName,
+      orderType:   orderType,
       paymentType: payment,
       paymentSplit: payment === 'SPLIT' ? split : undefined,
-      billerName,
-      upiId: activeStore.upiId,
-    });
-    try {
-      if (Platform.OS === 'web' && navigator.share) await navigator.share({ title: `Bill ${receipt.billNo}`, text: message });
-      else if (Platform.OS !== 'web') await Share.share({ title: `Bill ${receipt.billNo}`, message });
-      else if (navigator.clipboard) {
-        await navigator.clipboard.writeText(message);
-        Alert.alert('Bill copied', 'Bill details copied. You can paste and share them.');
-      } else Alert.alert('Bill details', message);
-    } catch (error) {
-      if (!(error instanceof Error && error.name === 'AbortError')) Alert.alert('Share unavailable', 'Could not open the share options.');
+      tax,
+      storeName:   activeStore.name,
+      storeInfo: {
+        name:    activeStore.name,
+        gstin:   activeStore.gstin   ?? '',
+        phone:   activeStore.phone   ?? '',
+        email:   activeStore.email   ?? '',
+        address: activeStore.address ?? '',
+        upiId:   activeStore.upiId   ?? '',
+        state:   activeStore.state   ?? 'Karnataka',
+        isCompositionScheme: activeStore.isCompositionScheme ?? false,
+      },
+    };
+  }, [receipt, activeStore, selectedCustomer, billerName, orderType, payment, split]);
+
+  const handleShareText = useCallback(async () => {
+    const inv = buildInvoiceData();
+    if (!inv) return;
+    const result = await shareViaNativeShare({ invoiceData: inv });
+    if (result === 'copied') Alert.alert('Copied!', 'Bill text copied to clipboard.');
+    else if (result === 'unavailable') Alert.alert('Share unavailable', 'Could not open share options.');
+  }, [buildInvoiceData]);
+
+  const handleDownloadPDF = useCallback(async () => {
+    const inv = buildInvoiceData();
+    if (!inv) return;
+    if (Platform.OS === 'web') {
+      await downloadPDF({ invoiceData: inv });
+    } else {
+      // Android: generate PDF via native service and share
+      try {
+        const { generateGSTBillPDF } = require('../../services/pdf/pdfService');
+        const { shareNativePDF }     = require('../../services/billing/billShareService');
+        const path = await generateGSTBillPDF(inv);
+        if (path) await shareNativePDF(path, inv.billNo, inv.customerName);
+        else Alert.alert('PDF error', 'Could not generate PDF.');
+      } catch (e) {
+        Alert.alert('PDF error', 'PDF generation failed.');
+      }
     }
-  }, [receipt, activeStore, selectedCustomer, payment, split, billerName]);
+  }, [buildInvoiceData]);
+
+  const handlePrint = useCallback(() => {
+    const inv = buildInvoiceData();
+    if (!inv) return;
+    if (Platform.OS === 'web') {
+      printBill({ invoiceData: inv });
+    } else {
+      Alert.alert('Print', 'Connect to a printer and use the PDF share option.');
+    }
+  }, [buildInvoiceData]);
+
+  const handleWhatsApp = useCallback(() => {
+    const inv = buildInvoiceData();
+    if (!inv) return;
+    shareViaWhatsApp({ invoiceData: inv }, selectedCustomer?.whatsappNumber ?? selectedCustomer?.phone);
+  }, [buildInvoiceData, selectedCustomer]);
 
   // ── Sub-renders ────────────────────────────────────────────────────────────
 
@@ -731,82 +795,221 @@ export const BillingScreen: React.FC<{ route?: { params?: RouteParams }; navigat
         </View>
       </Modal>
 
-      {/* ── Receipt modal ─────────────────────────────────────────────────── */}
-      <Modal visible={showReceipt} animationType="fade" transparent>
+      {/* ── Receipt modal — branded GST invoice ───────────────────────────── */}
+      <Modal visible={showReceipt} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxWidth: 420 }]}>
-            <ScrollView>
-              {receipt && (
-                <>
-                  <Text style={styles.receiptHeader}>
-                    {receipt.offline ? '⏳ Bill Saved (Offline)' : '✅ Bill Saved'}
-                  </Text>
-                  <Text style={styles.receiptBillNo}>{receipt.billNo}</Text>
-                  {receipt.offline && (
-                    <Text style={styles.offlineNotice}>
-                      This bill is saved on your device and will sync to the cloud when internet returns.
-                      The final bill number will be assigned after sync.
+          <View style={[styles.modalContent, { maxWidth: 500 }]}>
+
+            {/* Close row */}
+            <View style={styles.receiptTopRow}>
+              <Text style={styles.receiptSavedBadge}>
+                {receipt?.offline ? '⏳ Saved Offline' : '✅ Bill Saved'}
+              </Text>
+              <TouchableOpacity onPress={() => { setShowReceipt(false); clearCart(); }}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {receipt && (() => {
+                // Recompute tax for display — same function as PDF/print
+                const taxLines = receipt.items.map((it: any) => ({
+                  productId: it.productId ?? it.name,
+                  name: it.name, qty: it.qty, unit: it.unit ?? 'pcs',
+                  price: it.price, gst: it.gst ?? 0, hsn: it.hsn ?? '',
+                }));
+                const tax = computeTax(taxLines, {
+                  discountRupees: receipt.discount ?? 0,
+                  storeGstin:    activeStore.gstin,
+                  customerGstin: selectedCustomer?.gstNumber,
+                });
+
+                return (
+                  <>
+                    {/* Store header */}
+                    <View style={styles.receiptStoreHeader}>
+                      <Text style={styles.receiptStoreName}>{activeStore.name}</Text>
+                      {activeStore.address ? <Text style={styles.receiptStoreMeta}>{activeStore.address}</Text> : null}
+                      {activeStore.phone   ? <Text style={styles.receiptStoreMeta}>{activeStore.phone}</Text> : null}
+                      {activeStore.gstin   ? <Text style={styles.receiptStoreGstin}>GSTIN: {activeStore.gstin}</Text> : null}
+                    </View>
+
+                    {/* Invoice title */}
+                    <Text style={styles.receiptInvoiceTitle}>
+                      {activeStore.isCompositionScheme ? 'BILL OF SUPPLY' : 'TAX INVOICE'}
                     </Text>
-                  )}
-                  <View style={styles.receiptDivider} />
-                  {receipt.items.map((it, idx) => (
-                    <View key={idx} style={styles.receiptItemRow}>
-                      <Text style={styles.receiptItemName}>{it.name} ×{it.qty}</Text>
-                      <Text style={styles.receiptItemTotal}>₹{it.total.toFixed(2)}</Text>
-                    </View>
-                  ))}
-                  <View style={styles.receiptDivider} />
-                  <View style={styles.receiptTotalRow}>
-                    <Text>Subtotal</Text>
-                    <Text>₹{receipt.subtotal.toFixed(2)}</Text>
-                  </View>
-                  {receipt.totalGST > 0 && (
-                    <View style={styles.receiptTotalRow}>
-                      <Text>GST</Text>
-                      <Text>₹{receipt.totalGST.toFixed(2)}</Text>
-                    </View>
-                  )}
-                  {receipt.discount > 0 && (
-                    <View style={styles.receiptTotalRow}>
-                      <Text>Discount</Text>
-                      <Text style={{ color: '#e03131' }}>−₹{receipt.discount.toFixed(2)}</Text>
-                    </View>
-                  )}
-                  <View style={[styles.receiptTotalRow, { borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 8, marginTop: 4 }]}>
-                    <Text style={{ fontWeight: '700', fontSize: 16 }}>Total</Text>
-                    <Text style={{ fontWeight: '700', fontSize: 16, color: '#3B5BDB' }}>₹{receipt.grandTotal.toFixed(2)}</Text>
-                  </View>
-                  {receipt.customerName && (
-                    <Text style={styles.receiptCustomer}>Customer: {receipt.customerName}</Text>
-                  )}
-                  {selectedCustomer?.gstNumber && (
-                    <Text style={styles.receiptCustomer}>Customer GSTIN: {selectedCustomer.gstNumber}</Text>
-                  )}
-                  {receipt.udhaarAdded > 0 && (
-                    <Text style={styles.receiptUdhaar}>Udhaar added: ₹{receipt.udhaarAdded.toFixed(2)}</Text>
-                  )}
-                  {receipt.stockWarnings && receipt.stockWarnings.length > 0 && (
-                    <View style={styles.stockWarnings}>
-                      <Text style={styles.warningTitle}>⚠ Stock warnings</Text>
-                      {receipt.stockWarnings.map((w: any, i: number) => (
-                        <Text key={i} style={styles.warningText}>
-                          {w.name}: had {w.had}, sold {w.sold}
+
+                    {/* Bill meta */}
+                    <View style={styles.receiptMeta}>
+                      <View style={styles.receiptMetaRow}>
+                        <Text style={styles.receiptMetaLabel}>Bill No</Text>
+                        <Text style={styles.receiptMetaValue}>{receipt.billNo}</Text>
+                      </View>
+                      <View style={styles.receiptMetaRow}>
+                        <Text style={styles.receiptMetaLabel}>Date</Text>
+                        <Text style={styles.receiptMetaValue}>
+                          {new Date(receipt.timestamp ?? Date.now()).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}
                         </Text>
-                      ))}
+                      </View>
+                      <View style={styles.receiptMetaRow}>
+                        <Text style={styles.receiptMetaLabel}>Customer</Text>
+                        <Text style={styles.receiptMetaValue}>{selectedCustomer?.name ?? receipt.customerName ?? 'Walk-in'}</Text>
+                      </View>
+                      {selectedCustomer?.gstNumber ? (
+                        <View style={styles.receiptMetaRow}>
+                          <Text style={styles.receiptMetaLabel}>Cust. GSTIN</Text>
+                          <Text style={styles.receiptMetaValue}>{selectedCustomer.gstNumber}</Text>
+                        </View>
+                      ) : null}
+                      <View style={styles.receiptMetaRow}>
+                        <Text style={styles.receiptMetaLabel}>Biller</Text>
+                        <Text style={styles.receiptMetaValue}>{billerName}</Text>
+                      </View>
+                      <View style={styles.receiptMetaRow}>
+                        <Text style={styles.receiptMetaLabel}>Place of Supply</Text>
+                        <Text style={styles.receiptMetaValue}>{activeStore.state ?? 'Karnataka'}</Text>
+                      </View>
                     </View>
-                  )}
-                </>
-              )}
+
+                    {receipt.offline && (
+                      <View style={styles.offlineBanner}>
+                        <Text style={styles.offlineNotice}>
+                          Saved offline — will sync when internet returns.
+                        </Text>
+                      </View>
+                    )}
+
+                    <View style={styles.receiptDivider} />
+
+                    {/* Items */}
+                    <View style={styles.receiptItemHeader}>
+                      <Text style={[styles.receiptItemCol, { flex: 2 }]}>Item</Text>
+                      <Text style={[styles.receiptItemCol, styles.colRight]}>Taxable</Text>
+                      <Text style={[styles.receiptItemCol, styles.colRight]}>GST</Text>
+                      <Text style={[styles.receiptItemCol, styles.colRight]}>Total</Text>
+                    </View>
+                    {tax.lines.map((line, idx) => (
+                      <View key={idx} style={styles.receiptItemRow}>
+                        <View style={{ flex: 2 }}>
+                          <Text style={styles.receiptItemName}>{line.name}</Text>
+                          <Text style={styles.receiptItemSub}>{line.qty} {line.unit} × ₹{line.price.toFixed(2)}</Text>
+                        </View>
+                        <Text style={[styles.receiptItemNum, styles.colRight]}>₹{line.taxableAmount.toFixed(2)}</Text>
+                        <Text style={[styles.receiptItemNum, styles.colRight]}>
+                          {line.gst > 0 ? `${line.gst}%` : '—'}
+                        </Text>
+                        <Text style={[styles.receiptItemNum, styles.colRight, { fontWeight: '600' }]}>₹{line.total.toFixed(2)}</Text>
+                      </View>
+                    ))}
+
+                    <View style={styles.receiptDivider} />
+
+                    {/* Tax slab summary */}
+                    {!activeStore.isCompositionScheme && tax.slabs.some(s => s.rate > 0) && (
+                      <>
+                        <Text style={styles.receiptSlabTitle}>Tax Breakdown</Text>
+                        {tax.slabs.filter(s => s.rate > 0).map(slab => (
+                          <View key={slab.rate} style={styles.receiptTotalRow}>
+                            <Text style={styles.receiptSlabLabel}>
+                              {tax.isIgst ? `IGST ${slab.rate}%` : `CGST ${slab.rate / 2}% + SGST ${slab.rate / 2}%`}
+                            </Text>
+                            <Text style={styles.receiptSlabValue}>
+                              ₹{(tax.isIgst ? slab.igst : (slab.cgst + slab.sgst)).toFixed(2)}
+                            </Text>
+                          </View>
+                        ))}
+                        <View style={styles.receiptDivider} />
+                      </>
+                    )}
+
+                    {/* Grand total block */}
+                    {tax.discountAmount > 0 && (
+                      <View style={styles.receiptTotalRow}>
+                        <Text style={styles.totalLabel}>Subtotal (before discount)</Text>
+                        <Text style={styles.totalValue}>₹{tax.subtotalBeforeDiscount.toFixed(2)}</Text>
+                      </View>
+                    )}
+                    {tax.discountAmount > 0 && (
+                      <View style={styles.receiptTotalRow}>
+                        <Text style={styles.totalLabel}>Discount</Text>
+                        <Text style={[styles.totalValue, { color: '#e03131' }]}>−₹{tax.discountAmount.toFixed(2)}</Text>
+                      </View>
+                    )}
+                    <View style={styles.receiptTotalRow}>
+                      <Text style={styles.totalLabel}>Taxable Value</Text>
+                      <Text style={styles.totalValue}>₹{tax.taxableValue.toFixed(2)}</Text>
+                    </View>
+                    {tax.isIgst && tax.totalIGST > 0 && (
+                      <View style={styles.receiptTotalRow}>
+                        <Text style={styles.totalLabel}>IGST</Text>
+                        <Text style={styles.totalValue}>₹{tax.totalIGST.toFixed(2)}</Text>
+                      </View>
+                    )}
+                    {!tax.isIgst && tax.totalCGST > 0 && (
+                      <View style={styles.receiptTotalRow}>
+                        <Text style={styles.totalLabel}>CGST</Text>
+                        <Text style={styles.totalValue}>₹{tax.totalCGST.toFixed(2)}</Text>
+                      </View>
+                    )}
+                    {!tax.isIgst && tax.totalSGST > 0 && (
+                      <View style={styles.receiptTotalRow}>
+                        <Text style={styles.totalLabel}>SGST</Text>
+                        <Text style={styles.totalValue}>₹{tax.totalSGST.toFixed(2)}</Text>
+                      </View>
+                    )}
+                    {tax.roundOff !== 0 && (
+                      <View style={styles.receiptTotalRow}>
+                        <Text style={styles.totalLabel}>Round-off</Text>
+                        <Text style={styles.totalValue}>{tax.roundOff > 0 ? '+' : ''}₹{tax.roundOff.toFixed(2)}</Text>
+                      </View>
+                    )}
+                    <View style={[styles.receiptTotalRow, styles.grandRow]}>
+                      <Text style={styles.grandLabel}>GRAND TOTAL</Text>
+                      <Text style={styles.grandValue}>₹{tax.grandTotal.toFixed(2)}</Text>
+                    </View>
+
+                    {/* Amount in words */}
+                    <Text style={styles.amountWords}>{tax.amountInWords}</Text>
+
+                    {/* Payment mode */}
+                    <View style={styles.paymentBadge}>
+                      <Text style={styles.paymentBadgeText}>💳 {payment}{payment === 'UDHAAR' ? ` · Udhaar added ₹${(receipt.udhaarAdded ?? 0).toFixed(2)}` : ''}</Text>
+                    </View>
+
+                    {/* Stock warnings */}
+                    {receipt.stockWarnings?.length > 0 && (
+                      <View style={styles.stockWarnings}>
+                        <Text style={styles.warningTitle}>⚠ Stock warnings</Text>
+                        {receipt.stockWarnings.map((w: any, i: number) => (
+                          <Text key={i} style={styles.warningText}>{w.name}: had {w.had}, sold {w.sold}</Text>
+                        ))}
+                      </View>
+                    )}
+                  </>
+                );
+              })()}
             </ScrollView>
 
+            {/* 4-button action bar */}
             <View style={styles.receiptActions}>
-              <TouchableOpacity style={styles.receiptActionBtn} onPress={shareBill}>
-                <Text style={styles.receiptActionText}>📤 Share bill</Text>
+              <TouchableOpacity style={styles.receiptActionBtn} onPress={handleShareText}>
+                <Text style={styles.receiptActionIcon}>📤</Text>
+                <Text style={styles.receiptActionText}>Share</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.receiptActionBtn, styles.receiptPrimaryBtn]}
-                onPress={() => { setShowReceipt(false); clearCart(); }}
-              >
+              <TouchableOpacity style={styles.receiptActionBtn} onPress={handleDownloadPDF}>
+                <Text style={styles.receiptActionIcon}>📄</Text>
+                <Text style={styles.receiptActionText}>PDF</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.receiptActionBtn} onPress={handlePrint}>
+                <Text style={styles.receiptActionIcon}>🖨</Text>
+                <Text style={styles.receiptActionText}>Print</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.receiptActionBtn} onPress={handleWhatsApp}>
+                <Text style={styles.receiptActionIcon}>💬</Text>
+                <Text style={styles.receiptActionText}>WhatsApp</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.receiptActionBtn, styles.receiptPrimaryBtn]} onPress={() => { setShowReceipt(false); clearCart(); }}>
+                <Text style={styles.receiptActionIcon}>➕</Text>
                 <Text style={[styles.receiptActionText, { color: '#fff' }]}>New Bill</Text>
               </TouchableOpacity>
             </View>
@@ -959,24 +1162,43 @@ const styles = StyleSheet.create({
   billerRow:            { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 13, borderBottomWidth: 0.5, borderBottomColor: '#f0f0f0' },
   billerSelected:       { color: '#2f9e44', fontSize: 18, fontWeight: '700' },
 
-  // Receipt
-  receiptHeader:        { fontSize: 20, fontWeight: '700', textAlign: 'center' as const, marginBottom: 4, color: '#333' },
-  receiptBillNo:        { fontSize: 14, textAlign: 'center' as const, color: '#666', marginBottom: 8 },
-  offlineNotice:        { backgroundColor: '#fff3bf', padding: 10, borderRadius: 8, fontSize: 13, color: '#e67700', marginBottom: 8, textAlign: 'center' as const },
-  receiptDivider:       { height: 1, backgroundColor: '#eee', marginVertical: 8 },
-  receiptItemRow:       { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
-  receiptItemName:      { fontSize: 13, color: '#333', flex: 1 },
-  receiptItemTotal:     { fontSize: 13, color: '#333', fontWeight: '500' },
-  receiptTotalRow:      { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  receiptCustomer:      { fontSize: 13, color: '#555', marginTop: 8, textAlign: 'center' as const },
-  receiptUdhaar:        { fontSize: 13, color: '#e67700', marginTop: 4, textAlign: 'center' as const },
+  // Receipt — rebuilt GST invoice modal
+  receiptTopRow:        { flexDirection: 'row' as const, justifyContent: 'space-between' as const, alignItems: 'center' as const, marginBottom: 8 },
+  receiptSavedBadge:    { fontSize: 13, fontWeight: '700' as const, color: '#2f9e44' },
+  receiptStoreHeader:   { alignItems: 'center' as const, paddingVertical: 10, backgroundColor: '#f0fdf4', borderRadius: 8, marginBottom: 8 },
+  receiptStoreName:     { fontSize: 18, fontWeight: '800' as const, color: '#1E6B3C' },
+  receiptStoreMeta:     { fontSize: 11, color: '#4b5563', marginTop: 2, textAlign: 'center' as const },
+  receiptStoreGstin:    { fontSize: 11, fontWeight: '600' as const, color: '#374151', marginTop: 2 },
+  receiptInvoiceTitle:  { textAlign: 'center' as const, fontSize: 13, fontWeight: '800' as const, letterSpacing: 1.5, color: '#1E6B3C', marginVertical: 8, textTransform: 'uppercase' as const },
+  receiptMeta:          { backgroundColor: '#f9fafb', borderRadius: 8, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: '#e5e7eb' },
+  receiptMetaRow:       { flexDirection: 'row' as const, justifyContent: 'space-between' as const, paddingVertical: 3, borderBottomWidth: 0.5, borderBottomColor: '#f0f0f0' },
+  receiptMetaLabel:     { fontSize: 11, color: '#6b7280', fontWeight: '600' as const, flex: 1 },
+  receiptMetaValue:     { fontSize: 11, color: '#111827', flex: 2, textAlign: 'right' as const },
+  offlineBanner:        { backgroundColor: '#fff3bf', borderRadius: 6, padding: 8, marginBottom: 6 },
+  offlineNotice:        { fontSize: 12, color: '#e67700', textAlign: 'center' as const },
+  receiptDivider:       { height: 1, backgroundColor: '#e5e7eb', marginVertical: 8 },
+  receiptItemHeader:    { flexDirection: 'row' as const, paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#e5e7eb', marginBottom: 2 },
+  receiptItemCol:       { fontSize: 10, fontWeight: '700' as const, color: '#6b7280', textTransform: 'uppercase' as const },
+  receiptItemRow:       { flexDirection: 'row' as const, alignItems: 'flex-start' as const, paddingVertical: 5, borderBottomWidth: 0.5, borderBottomColor: '#f5f5f5' },
+  receiptItemName:      { fontSize: 13, fontWeight: '500' as const, color: '#111827' },
+  receiptItemSub:       { fontSize: 11, color: '#6b7280', marginTop: 1 },
+  receiptItemNum:       { fontSize: 12, color: '#374151', minWidth: 56 },
+  colRight:             { textAlign: 'right' as const },
+  receiptSlabTitle:     { fontSize: 11, fontWeight: '700' as const, color: '#6b7280', textTransform: 'uppercase' as const, marginBottom: 4, letterSpacing: 0.5 },
+  receiptSlabLabel:     { fontSize: 12, color: '#374151', flex: 1 },
+  receiptSlabValue:     { fontSize: 12, color: '#111827', fontWeight: '500' as const },
+  receiptTotalRow:      { flexDirection: 'row' as const, justifyContent: 'space-between' as const, paddingVertical: 4 },
+  amountWords:          { fontSize: 11, fontStyle: 'italic' as const, color: '#4b5563', backgroundColor: '#f0fdf4', borderLeftWidth: 3, borderLeftColor: '#1E6B3C', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 4, marginVertical: 8 },
+  paymentBadge:         { backgroundColor: '#eff6ff', borderRadius: 6, padding: 8, marginVertical: 6, borderWidth: 1, borderColor: '#bfdbfe' },
+  paymentBadgeText:     { fontSize: 12, color: '#1e40af', fontWeight: '600' as const, textAlign: 'center' as const },
   stockWarnings:        { backgroundColor: '#fff3bf', borderRadius: 8, padding: 10, marginTop: 8 },
-  warningTitle:         { fontSize: 13, fontWeight: '600', color: '#e67700', marginBottom: 4 },
+  warningTitle:         { fontSize: 13, fontWeight: '600' as const, color: '#e67700', marginBottom: 4 },
   warningText:          { fontSize: 12, color: '#e67700' },
-  receiptActions:       { flexDirection: 'row', gap: 10, marginTop: 16 },
-  receiptActionBtn:     { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' as const, borderWidth: 0.5, borderColor: '#ddd' },
-  receiptPrimaryBtn:    { backgroundColor: '#3B5BDB', borderColor: '#3B5BDB' },
-  receiptActionText:    { fontSize: 14, fontWeight: '500', color: '#333' },
+  receiptActions:       { flexDirection: 'row' as const, gap: 6, marginTop: 14, flexWrap: 'wrap' as const },
+  receiptActionBtn:     { flex: 1, minWidth: 56, paddingVertical: 10, borderRadius: 8, alignItems: 'center' as const, borderWidth: 0.5, borderColor: '#ddd', backgroundColor: '#fafafa' },
+  receiptPrimaryBtn:    { backgroundColor: '#1E6B3C', borderColor: '#1E6B3C', flex: 1.5 },
+  receiptActionIcon:    { fontSize: 18, marginBottom: 2 },
+  receiptActionText:    { fontSize: 11, fontWeight: '500' as const, color: '#333' },
 });
 
 export default BillingScreen;

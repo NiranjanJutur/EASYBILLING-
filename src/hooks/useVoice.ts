@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { NativeEventEmitter, NativeModules, PermissionsAndroid, Platform } from 'react-native';
+import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 
 interface ISpeechRecognition {
   lang: string;
@@ -55,9 +55,12 @@ export const useVoice = () => {
 
     if (Platform.OS !== 'web') {
       if (!nativeVoice || !nativeVoiceEvents) throw new Error('Voice selection is unavailable in this app build.');
+      // PermissionsAndroid is Android-only and is loaded only on native builds so
+      // the web bundle does not try to import an API that react-native-web omits.
+      const { PermissionsAndroid } = require('react-native');
       const permission = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO, {
         title: 'Microphone permission',
-        message: 'Allow SMS to listen for the product name you want to add.',
+        message: 'Allow ShopLedger to listen for the product name you want to add.',
         buttonPositive: 'Allow',
         buttonNegative: 'Cancel',
       });

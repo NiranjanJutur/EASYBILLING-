@@ -1,10 +1,11 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Image, ScrollView, ActivityIndicator } from 'react-native';
 import { COLORS, SPACING, RADIUS, SHADOW, GRADIENTS } from '../../config/theme';
 import { useScanner } from '../../services/ai/scannerService';
 import { useSlipExtraction } from '../../hooks/useSlipExtraction';
 import { Product } from '../../models/Product';
 import GradientView from '../../components/GradientView';
+import { useIsDesktop } from '../../hooks/useIsDesktop';
 
 interface ScanScreenProps {
     navigation?: any;
@@ -22,6 +23,26 @@ const ScanScreen = ({ navigation, onProductAdded }: ScanScreenProps) => {
     const [capturedImage, setCapturedImage] = useState<string | null>(null);
     const [cameraActive, setCameraActive] = useState(false);
     const [cameraError, setCameraError] = useState<string | null>(null);
+    const [cameraAvailable, setCameraAvailable] = useState<boolean | null>(null); // null = checking
+    const isDesktop = useIsDesktop();
+
+    // Check camera availability on mount
+    useEffect(() => {
+        const checkCamera = async () => {
+            try {
+                if (!navigator.mediaDevices?.getUserMedia) {
+                    setCameraAvailable(false);
+                    return;
+                }
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const hasVideoInput = devices.some(d => d.kind === 'videoinput');
+                setCameraAvailable(hasVideoInput);
+            } catch {
+                setCameraAvailable(false);
+            }
+        };
+        checkCamera();
+    }, []);
 
     const { scanProduct, isScanning: isScanningProduct, lastResult: productResult } = useScanner();
     const { extract: processSlip, loading: isProcessingSlip, result: slipResult, reset: resetSlip } = useSlipExtraction();
@@ -197,22 +218,52 @@ const ScanScreen = ({ navigation, onProductAdded }: ScanScreenProps) => {
             {/* Action Bar */}
             {!capturedImage && !isScanningProduct && !isProcessingSlip && (
                 <View style={styles.actionBar}>
-                    <TouchableOpacity style={styles.sideBtn} onPress={handleUpload}>
-                        <Text style={styles.sideIcon}>📁</Text>
-                        <Text style={styles.sideLabel}>Upload</Text>
+                    {/* Upload is always the primary action on desktop or when camera is unavailable */}
+                    <TouchableOpacity
+                        style={cameraAvailable === false || isDesktop ? styles.captureBtn : styles.sideBtn}
+                        onPress={handleUpload}
+                    >
+                        {cameraAvailable === false || isDesktop ? (
+                            <GradientView colors={GRADIENTS.PRIMARY_HEADER} style={styles.captureCircle}>
+                                <Text style={{ fontSize: 28 }}>📁</Text>
+                            </GradientView>
+                        ) : (
+                            <Text style={styles.sideIcon}>📁</Text>
+                        )}
+                        <Text style={cameraAvailable === false || isDesktop ? styles.captureLabel : styles.sideLabel}>
+                            Upload Image
+                        </Text>
                     </TouchableOpacity>
                     
-                    <TouchableOpacity style={styles.captureBtn} onPress={captureAndProcess}>
-                        <GradientView colors={GRADIENTS.PRIMARY_HEADER} style={styles.captureCircle}>
-                            <Text style={{ fontSize: 28 }}>{mode === 'PRODUCT' ? '📸' : '📄'}</Text>
-                        </GradientView>
-                        <Text style={styles.captureLabel}>{cameraActive ? 'Capture' : 'Start'}</Text>
-                    </TouchableOpacity>
+                    {/* Camera button only shown when camera is available */}
+                    {cameraAvailable !== false && (
+                        <TouchableOpacity style={cameraAvailable === false ? styles.sideBtn : styles.captureBtn} onPress={captureAndProcess}>
+                            <GradientView colors={GRADIENTS.PRIMARY_HEADER} style={styles.captureCircle}>
+                                <Text style={{ fontSize: 28 }}>{mode === 'PRODUCT' ? '📸' : '📄'}</Text>
+                            </GradientView>
+                            <Text style={styles.captureLabel}>{cameraActive ? 'Capture' : 'Start Camera'}</Text>
+                        </TouchableOpacity>
+                    )}
 
                     <TouchableOpacity style={styles.sideBtn} onPress={reset}>
                         <Text style={styles.sideIcon}>🔄</Text>
                         <Text style={styles.sideLabel}>Reset</Text>
                     </TouchableOpacity>
+                </View>
+            )}
+
+            {/* Desktop / no-camera persistent banner */}
+            {cameraAvailable === false && !capturedImage && (
+                <View style={styles.noCameraBanner}>
+                    <Text style={styles.noCameraIcon}>🖥️</Text>
+                    <Text style={styles.noCameraText}>
+                        No camera detected. Upload an image to scan products or slips.
+                    </Text>
+                </View>
+            )}
+            {cameraError && !capturedImage && cameraAvailable !== false && (
+                <View style={[styles.noCameraBanner, { backgroundColor: 'rgba(220,38,38,0.15)' }]}>
+                    <Text style={styles.noCameraText}>{cameraError}</Text>
                 </View>
             )}
         </View>
@@ -256,6 +307,9 @@ const styles = StyleSheet.create({
     sideBtn: { alignItems: 'center', width: 60 },
     sideIcon: { fontSize: 24 },
     sideLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 10, marginTop: 4 },
+    noCameraBanner: { position: 'absolute', bottom: 100, left: 20, right: 20, backgroundColor: 'rgba(30,107,60,0.15)', borderRadius: RADIUS.LG, padding: SPACING.LG, flexDirection: 'row', alignItems: 'center', gap: SPACING.MD },
+    noCameraIcon: { fontSize: 28 },
+    noCameraText: { flex: 1, color: '#fff', fontSize: 13, lineHeight: 18 },
 });
 
 export default ScanScreen;
