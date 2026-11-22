@@ -36,6 +36,18 @@ expo-env.d.ts
 .firebase/
 firebase-debug.log
 
+# ─── Video & Render Outputs ──────────────────────────────────────────────────
+*.mp4
+*.webm
+*.mov
+*.avi
+*.mkv
+*.gif
+out/
+promo-video/out/
+promo-video/.remotion/
+promo-video/node_modules/
+
 # ─── Editor & OS ─────────────────────────────────────────────────────────────
 .vscode/settings.json
 .DS_Store
