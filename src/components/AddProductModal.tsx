@@ -7,6 +7,7 @@ import { COLORS, SPACING, RADIUS } from '../config/theme';
 import { GST_SLABS } from '../config/constants';
 import { addProduct, getProducts } from '../services/firebase/firestoreService';
 import { Product } from '../models/Product';
+import BarcodeScannerModal from './BarcodeScannerModal';
 
 
 const PRESET_CATEGORIES = [
@@ -63,13 +64,15 @@ const AddProductModal = ({
     const [currentStock, setCurrentStock] = useState('');
     const [minThreshold, setMinThreshold] = useState('5');
     const [hsnCode, setHsnCode] = useState('');
+    const [barcode, setBarcode] = useState('');
+    const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
     const [saving, setSaving] = useState(false);
 
     const reset = () => {
         setName(''); setPrice(''); setPurchasePrice(''); setCurrentStock('');
         setMinThreshold('5'); setCategory('🌾 Grains'); setUnit('kg');
         setGstPercent(5); setCustomCategory(''); setCustomUnit(''); setPackSize('');
-        setHsnCode('');
+        setHsnCode(''); setBarcode(''); setShowBarcodeScanner(false);
         setShowCustomCategory(false); setShowCustomUnit(false);
     };
 
@@ -116,6 +119,7 @@ const AddProductModal = ({
                 minThreshold: Number(minThreshold) || 5,
                 imageUrl: '', supplierId: '', supplierPhone: '',
                 hsnCode: hsnCode.trim() || null,
+                barcode: barcode.trim() || null,
                 isWeightBased: ['kg', 'gm', 'ltr', 'ml'].includes(effectiveUnit),
                 isActive: true,
             };
@@ -154,6 +158,35 @@ const AddProductModal = ({
                             value={name}
                             onChangeText={setName}
                         />
+
+                        {/* Barcode / EAN */}
+                        <Text style={styles.label}>
+                            Barcode / EAN <Text style={styles.sectionHint}>(Optional - scan or auto-generate)</Text>
+                        </Text>
+                        <View style={styles.barcodeRow}>
+                            <TextInput
+                                style={[styles.input, { flex: 1 }]}
+                                placeholder="e.g. 8901030383709"
+                                placeholderTextColor={COLORS.TEXT_DIM}
+                                value={barcode}
+                                onChangeText={setBarcode}
+                            />
+                            <TouchableOpacity
+                                style={styles.barcodeScanBtn}
+                                onPress={() => setShowBarcodeScanner(true)}
+                            >
+                                <Text style={styles.barcodeScanBtnText}>📷 Scan</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.barcodeAutoBtn}
+                                onPress={() => {
+                                    const autoCode = '890' + Math.floor(10000 + Math.random() * 90000);
+                                    setBarcode(autoCode);
+                                }}
+                            >
+                                <Text style={styles.barcodeAutoBtnText}>⚡ Auto</Text>
+                            </TouchableOpacity>
+                        </View>
 
                         {/* Category */}
                         <Text style={styles.label}>Category *</Text>
@@ -326,6 +359,14 @@ const AddProductModal = ({
                     </TouchableOpacity>
                 </View>
             </KeyboardAvoidingView>
+
+            {/* Barcode Scanner Viewfinder Modal */}
+            <BarcodeScannerModal
+                visible={showBarcodeScanner}
+                onClose={() => setShowBarcodeScanner(false)}
+                onScanned={(code) => setBarcode(code)}
+                title="Scan Product Barcode"
+            />
         </Modal>
     );
 };
@@ -342,6 +383,27 @@ const styles = StyleSheet.create({
     input: { backgroundColor: COLORS.BACKGROUND, borderRadius: RADIUS.MD, paddingHorizontal: SPACING.MD, paddingVertical: 10, color: COLORS.TEXT_BODY, borderWidth: 1, borderColor: COLORS.BORDER },
     row: { flexDirection: 'row', gap: SPACING.SM },
     half: { flex: 1 },
+    barcodeRow: { flexDirection: 'row', gap: SPACING.XS, alignItems: 'center', marginBottom: SPACING.XS },
+    barcodeScanBtn: {
+        backgroundColor: COLORS.PRIMARY,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: RADIUS.MD,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    barcodeScanBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+    barcodeAutoBtn: {
+        backgroundColor: COLORS.BACKGROUND,
+        borderWidth: 1,
+        borderColor: COLORS.BORDER,
+        paddingHorizontal: 10,
+        paddingVertical: 10,
+        borderRadius: RADIUS.MD,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    barcodeAutoBtnText: { color: COLORS.TEXT_BODY, fontWeight: '600', fontSize: 12 },
     chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.XS, marginBottom: SPACING.XS },
     chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: COLORS.BORDER, backgroundColor: COLORS.BACKGROUND, alignItems: 'center' },
     chipActive: { borderColor: COLORS.PRIMARY, backgroundColor: COLORS.PRIMARY + '18' },

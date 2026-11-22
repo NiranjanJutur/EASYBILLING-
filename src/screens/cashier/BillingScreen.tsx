@@ -31,6 +31,7 @@ import type { TransactionItem, PaymentType, OrderType } from '../../models/Trans
 import { useSession } from '../../context/SessionContext';
 import { useStore } from '../../context/StoreContext';
 import UpiQrModal from '../../components/UpiQrModal';
+import BarcodeScannerModal from '../../components/BarcodeScannerModal';
 import { computeTax } from '../../services/billing/taxCalc';
 import {
   buildTextMessage, downloadPDF, printBill,
@@ -117,6 +118,8 @@ export const BillingScreen: React.FC<{ route?: { params?: RouteParams }; navigat
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [receipt, setReceipt]                 = useState<SaleResult | null>(null);
   const [showReceipt, setShowReceipt]         = useState(false);
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+  const [scanToast, setScanToast]             = useState<string | null>(null);
   const paramsApplied = useRef(false);
   const draftBillNo = useRef(`DRAFT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`);
 
@@ -235,6 +238,24 @@ export const BillingScreen: React.FC<{ route?: { params?: RouteParams }; navigat
       }];
     });
   }, []);
+
+  const handleBarcodeScanned = useCallback((code: string) => {
+    const clean = code.trim().toLowerCase();
+    const product = products.find(p =>
+      [p.barcode, p.sku, p.id].some(v => v?.trim().toLowerCase() === clean)
+    );
+    if (product) {
+      addToCart(product);
+      setScanToast(`✅ Added: ${product.name} (₹${product.price})`);
+      setTimeout(() => setScanToast(null), 2500);
+    } else {
+      Alert.alert(
+        'Barcode Not Found',
+        `No product in catalog matches barcode "${code}".\n\nYou can add this barcode to the product in the Add Product form.`,
+        [{ text: 'OK' }]
+      );
+    }
+  }, [products, addToCart]);
 
   const updateQty = useCallback((productId: string, delta: number) => {
     setCart(prev =>
@@ -443,16 +464,37 @@ export const BillingScreen: React.FC<{ route?: { params?: RouteParams }; navigat
   // ── Products panel ─────────────────────────────────────────────────────────
   const ProductsPanel = () => (
     <View style={[styles.productsPanel, isWide && styles.productsPanelWide]}>
-      {/* Search */}
+      {/* Search & Barcode Scan */}
       <View style={styles.searchBar}>
         <TextInput
           style={styles.searchInput}
-          placeholder="🔍 Search products…"
+          placeholder="🔍 Search name or scan barcode…"
           value={search}
           onChangeText={setSearch}
           placeholderTextColor="#aaa"
+          onSubmitEditing={() => {
+            const trimmed = search.trim();
+            if (!trimmed) return;
+            const matched = products.find(p =>
+              [p.barcode, p.sku, p.id].some(v => v?.trim().toLowerCase() === trimmed.toLowerCase())
+            );
+            if (matched) {
+              addToCart(matched);
+              setSearch('');
+              setScanToast(`✅ Added: ${matched.name} (₹${matched.price})`);
+              setTimeout(() => setScanToast(null), 2500);
+            }
+          }}
         />
+        <TouchableOpacity style={styles.searchScanBtn} onPress={() => setShowBarcodeScanner(true)}>
+          <Text style={styles.searchScanIcon}>📷</Text>
+        </TouchableOpacity>
       </View>
+      {scanToast && (
+        <View style={styles.scanToastBar}>
+          <Text style={styles.scanToastText}>{scanToast}</Text>
+        </View>
+      )}
       {/* Product grid */}
       <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
         <View style={styles.productGrid}>
@@ -1016,6 +1058,15 @@ export const BillingScreen: React.FC<{ route?: { params?: RouteParams }; navigat
           </View>
         </View>
       </Modal>
+
+      {/* ── Continuous Barcode Scanner Modal ─────────────────────────────── */}
+      <BarcodeScannerModal
+        visible={showBarcodeScanner}
+        continuous={true}
+        onClose={() => setShowBarcodeScanner(false)}
+        onScanned={handleBarcodeScanned}
+        title="Scan Barcodes to Add to Cart"
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -1043,9 +1094,13 @@ const styles = StyleSheet.create({
   productsPanel:        { },
   productsPanelWide:    { flex: 3, borderRightWidth: 1, borderRightColor: '#e0e0e0' },
 
-  // Search
-  searchBar:            { backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: '#e0e0e0' },
-  searchInput:          { height: 36, backgroundColor: '#f2f2f2', borderRadius: 8, paddingHorizontal: 12, fontSize: 14, color: '#333' },
+  // Search & Barcode
+  searchBar:            { backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: '#e0e0e0', flexDirection: 'row', alignItems: 'center', gap: 8 },
+  searchInput:          { flex: 1, height: 38, backgroundColor: '#f2f2f2', borderRadius: 8, paddingHorizontal: 12, fontSize: 14, color: '#333' },
+  searchScanBtn:        { width: 38, height: 38, backgroundColor: '#f0fdf4', borderRadius: 8, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#bbf7d0' },
+  searchScanIcon:       { fontSize: 18 },
+  scanToastBar:         { backgroundColor: '#10B981', paddingVertical: 6, paddingHorizontal: 12, alignItems: 'center' },
+  scanToastText:        { color: '#fff', fontWeight: '700', fontSize: 13 },
 
   // Products
   productGrid:          { padding: 8 },
