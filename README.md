@@ -1,123 +1,127 @@
-# ShopLedger
+# 🏪 EasyBilling (ShopLedger)
 
-**ShopLedger** is a local-first, open-source billing and shop-management app for small businesses. It runs on Android and the web, keeps business data on the device by default, and starts without a cloud account or API key.
+> An open-source, 100% offline-first retail operating system & smart POS built for India's 12M+ Kirana and small retail stores.
 
-## Highlights
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![React Native](https://img.shields.io/badge/React%20Native-0.84-blue.svg)](https://reactnative.dev/)
+[![Vite](https://img.shields.io/badge/Vite-7.0-purple.svg)](https://vitejs.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel-black.svg)](https://easybilling-green.vercel.app/)
 
-- **Fast billing:** Create GST-ready invoices for in-store, takeaway, delivery, and wholesale orders.
-- **Flexible payments:** Record cash, UPI, card, credit, or split payments. UPI payments can show a QR code for the final bill amount.
-- **Invoices you can use:** Share a clean invoice message, send it through WhatsApp or the device share sheet, and create a printable PDF invoice.
-- **GST support:** Store customer GSTIN details, item tax rates, invoice tax summaries, and compliance-ready bill information.
-- **Inventory control:** Manage products, stock, suppliers, purchases, restocking, and low-stock-aware workflows.
-- **Customer ledger:** Keep customer profiles, credit balances, payments, purchase history, and GSTIN information.
-- **Udhaar control:** Set customer credit limits, record repayments, and see outstanding balances before accepting another credit sale.
-- **Works offline:** Local storage is the default, so everyday billing continues without an internet connection.
-- **Roles and PINs:** Owner, cashier, stock-manager, and accountant views keep everyday tasks focused.
-- **Smart input:** Add products with barcode scanning, camera/slip capture, voice input, or manual catalogue search.
+---
 
-## Feature list
+## 🌐 Live Web Demo
 
-| Area | Included capabilities |
-| --- | --- |
-| Billing | Cart management, item quantities, discounts, taxes, bill numbers, order types, and completed-bill history |
-| Payments | Cash, UPI, card, credit, split settlement, and a bill-total UPI QR/payment link |
-| Invoices | GST tax invoice, text receipt, WhatsApp/device sharing, PDF export, and printing workflow |
-| Products & stock | Product catalogue, barcode lookup, stock adjustments, suppliers, purchases, and restocking |
-| Customers & credit | Customer profiles, phone details, GSTIN input, credit limits, outstanding balances, repayments, and transaction history |
-| GST & compliance | Item GST rates, HSN-ready product data, tax totals, customer GSTINs, compliance records, and optional e-invoice/e-way-bill service integration |
-| Reports | Owner dashboard, sales summaries, bill history, low-stock visibility, accountant reports, and compliance information |
-| Input tools | Barcode scanning, camera capture, handwritten-slip processing, voice-assisted product selection, and manual catalogue search on compatible Android devices |
-| AI assistance | Optional product/slip recognition and stock or expiry insights when the owner configures an AI integration |
-| Privacy | Local-first storage, generic demo data, and optional—not required—cloud synchronization |
+Try the live Web POS right in your browser (no installation required):  
+👉 **[easybilling-green.vercel.app](https://easybilling-green.vercel.app/)**
 
-## Screens
+---
 
-- Home and quick scan
-- Billing and bill history
-- Inventory, products, suppliers, purchases, and godown stock
-- Customers, credit ledger, and payment collection
-- Owner dashboard with compliance information
-- Accountant dashboard and reports
-- Store settings and staff PIN management
+## 🌟 Key Highlights
 
-## Business workflows
+- **⚡ 100% Offline-First Local Architecture:** Operates entirely on device memory and local storage (`AsyncStorage` / `kvStore`). Never stops billing even if internet or Wi-Fi drops. (Optional Supabase cloud sync for multi-counter shops).
+- **🚀 2-Minute Onboarding Wizard:** First launch wizard gets the store ready in 2 minutes. Configures shop profile, 36 Indian state GST codes, UPI VPA, and a **4-digit PIN** (with smart blocking of weak PINs like `1234`, `0000`, and birth years).
+- **🌐 5 Indian Regional Languages:** Full native UI support for:
+  - English
+  - Kannada (ಕನ್ನಡ)
+  - Hindi (हिन्दी)
+  - Telugu (తెలుగు)
+  - Marathi (मराठी)
+- **📷 Continuous Rear-Camera Barcode Scanner:** Real-time decoding powered by ZXing and Android Vision Camera with exact lens-locking to prevent camera-flipping glitches.
+- **📋 Smart Indian GST Compliance:** Full CGST/SGST/IGST breakdown with round-off and amount-in-words converter. Automatically issues **"Bill of Supply"** for Composition Scheme dealers and **"Tax Invoice"** for Regular GST shops.
+- **📒 Smart Udhaar Khata (Credit Ledger):** Digital credit tracking with customizable limits, balance safeguards, and 1-click **WhatsApp payment reminders** with dynamic UPI QR codes.
+- **🖨️ Thermal Printing & PDF Receipts:** Formatted for standard 2-inch (58mm) and 3-inch (80mm) thermal receipt printers, as well as printable PDFs with QR codes.
 
-### Daily billing
+---
 
-Search, scan, or speak an item; select the customer and order type; collect payment; then share or print the finished GST invoice. Completing a bill updates the local sales history and stock records.
+## 🛠️ Feature Overview
 
-### Customer credit (udhaar)
+| Area | Features |
+|---|---|
+| **POS Billing** | Fast cart management, item quantity stepper, weight-based & piece-based pricing, instant search, barcode scan trigger, and multi-mode settlement. |
+| **Payment Modes** | Cash, UPI, Card, Udhaar (Credit), and Split settlement with dynamic bill-total UPI QR codes. |
+| **GST & Compliance** | 36 Indian state codes, HSN codes, multi-slab tax breakdowns, customer GSTIN verification, and Composition Scheme support. |
+| **Customer Credit (Udhaar)** | Profile management, credit limits, outstanding balances, repayment history, and WhatsApp reminder buttons. |
+| **Inventory & Purchasing** | Low-stock alerts, supplier tracking, purchase entries, and stock adjustments. |
+| **Security & Roles** | Strictly 4-digit PIN login with roles for Owner, Cashier, Stock Manager, and Accountant. |
 
-Set a credit limit for a customer, sell on credit when appropriate, and record repayments later. The profile shows outstanding balance and purchase history so staff can make informed decisions at the counter.
+---
 
-### Handwritten customer slips
+## 🚀 Quick Start
 
-On supported devices, capture a customer slip, review the extracted items, correct anything that needs attention, and send the confirmed items to billing. AI-backed recognition is optional and requires the owner's own AI configuration.
+### Prerequisites
+- Node.js 18+ (tested up to Node 24)
+- npm 9+
 
-### Stock and purchasing
-
-Keep a product catalogue with stock, purchase and sale pricing, supplier details, GST information, and reorder workflows. Use the dashboard and reports to monitor stock, bills, and business activity.
-
-## Run locally
-
+### 1. Clone & Install
 ```bash
 git clone https://github.com/NiranjanJutur/EASYBILLING-.git
 cd EASYBILLING-
-npm install
+npm install --legacy-peer-deps
 ```
 
-Copy the local configuration template:
-
+### 2. Configure Environment
 ```bash
+# Windows
 copy .env.example .env
+
+# macOS / Linux
+cp .env.example .env
 ```
+*Note: The default `.env` is configured for `DATA_MODE=LOCAL`, requiring no external database or API keys.*
 
-The template already uses `DATA_MODE=LOCAL`. No Firebase, Supabase, AI key, or payment-service key is needed for local billing.
+### 3. Run Locally
 
+**Run Web POS (Vite):**
 ```bash
-# Android device or emulator
-npm run android
-
-# Web
 npm run web:dev
 ```
+Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-## Default demo PINs
-
-| Role | PIN |
-| --- | --- |
-| Owner | `1990` |
-| Cashier | `2001` |
-| Stock manager | `1985` |
-| Accountant | `1995` |
-
-These are demo-only credentials. Change them before using the app for a real business.
-
-## Optional cloud sync
-
-ShopLedger is local-first. Optional Supabase synchronization is available for teams that want multi-device data sync. Add only your own public Supabase URL and anonymous key to `.env`; never commit `.env` or a service-role key.
-
-## Roadmap
-
-See [ROADMAP.md](ROADMAP.md) for planned open-source improvements, including more barcode-device testing, printable invoice customization, backups, accessibility, and translations.
-
-## Project structure
-
-```text
-src/                 React Native and web application source
-android/             Android native project
-supabase/            Optional database schema and functions
-__tests__/           Tests
+**Run Android App (React Native):**
+```bash
+npm run android
 ```
 
-## Privacy and security
+---
 
-This public repository contains generic demo business details only. It excludes local environment files, API keys, cloud configuration files, signing keys, build products, logs, and device data. Before publishing an APK, set your own store profile and replace all demo PINs.
+## 🔐 Default Demo PINs (Local Mode)
 
-## Contributing
+| Role | 4-Digit PIN | Permissions |
+|---|---|---|
+| **Owner** | `1990` *(or custom set during registration)* | Full administrative access, settings, PIN management |
+| **Cashier** | `2001` | Fast POS billing, customer checkout, payment collection |
+| **Stock Manager** | `1985` | Product catalog, supplier orders, purchase entries |
+| **Accountant** | `1995` | Tax summaries, daily sales reports, compliance view |
 
-Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and [ROADMAP.md](ROADMAP.md) for useful areas to improve.
+---
 
-## License
+## 🎬 Marketing & Promo Video (Remotion)
 
-[MIT](LICENSE)
+This repository includes a programmatic marketing video studio powered by [Remotion](https://remotion.dev):
+
+```bash
+cd promo-video
+npm install
+npm start # Interactive Remotion Studio player
+npm run build # Render Full HD MP4 video
+```
+Check [MARKETING_AND_REDDIT_GUIDE.md](MARKETING_AND_REDDIT_GUIDE.md) for ready-to-use launch templates and social media copy.
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions from developers, designers, and store owners! 
+
+Check out [CONTRIBUTING.md](CONTRIBUTING.md) to get started. High-priority areas where you can help:
+- [ ] **Thermal Printer Drivers:** ESC/POS Bluetooth & USB drivers for Android and Web.
+- [ ] **Voice-to-Cart:** Offline voice-assisted item lookup (Web Speech API / Bhashini).
+- [ ] **More Languages:** Bengali, Tamil, Gujarati, Malayalam, and Odia translations.
+- [ ] **Device Testing:** Real-world testing across different Android phones, tablets, and POS devices.
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
